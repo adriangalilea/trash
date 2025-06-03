@@ -1,0 +1,42 @@
+#!/bin/bash
+
+# Restore files from macOS trash
+if [ $# -eq 0 ]; then
+    echo "Usage: trash-restore <filename> [destination]"
+    echo ""
+    echo "Available files in trash:"
+    # Use absolute path to trash-list
+    "$(dirname "$0")/trash-list"
+    exit 1
+fi
+
+FILE_TO_RESTORE="$1"
+DESTINATION="${2:-$(pwd)}"
+
+# Restore file from trash to specified destination
+result=$(osascript -e "
+tell application \"Finder\"
+    try
+        set targetItem to first item of trash whose name is \"$FILE_TO_RESTORE\"
+        set destPath to \"$DESTINATION\"
+        
+        -- Check if file already exists in destination
+        try
+            set existingFile to POSIX file (destPath & \"/\" & \"$FILE_TO_RESTORE\") as alias
+            return \"Error: $FILE_TO_RESTORE already exists in \" & destPath
+        end try
+        
+        -- Move file from trash to destination
+        move targetItem to POSIX file destPath
+        return \"Restored: $FILE_TO_RESTORE to \" & destPath
+    on error errMsg
+        if errMsg contains \"Can't get item\" then
+            return \"File not found in trash: $FILE_TO_RESTORE\"
+        else
+            return \"Error: \" & errMsg
+        end if
+    end try
+end tell
+" 2>&1)
+
+echo "$result"

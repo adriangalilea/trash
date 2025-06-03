@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# List files in macOS trash with their original paths
+osascript -e '
+tell application "Finder"
+    set trashItems to items of trash
+    if (count of trashItems) is 0 then
+        return "Trash is empty"
+    else
+        set output to ""
+        repeat with i from 1 to count of trashItems
+            set thisItem to item i of trashItems
+            set itemName to name of thisItem
+            set itemPath to POSIX path of (thisItem as alias)
+            set output to output & itemName & " -> " & itemPath & linefeed
+        end repeat
+        return output
+    end if
+end tell
+'
