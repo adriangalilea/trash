@@ -43,7 +43,10 @@ Or without mise: `swift build -c release && install -m 755 .build/release/trash 
 - `restore` never overwrites, and screams if the original directory is gone
   or the item was trashed by something else (no recorded origin): pass a
   destination directory in those cases, or use Finder's Put Back.
-- Duplicate names in the Trash make `restore` refuse rather than guess.
+- Duplicate names don't happen: macOS renames on collision inside the Trash
+  (`dup.txt` then `dup.txt 14-27-01-327.txt`), and each item restores to its
+  true origin regardless of the trash-side rename. If a duplicate somehow
+  appears anyway, `restore` refuses rather than guesses.
 - Home-volume Trash only. Items trashed on external volumes live in that
   volume's `.Trashes` and stay Finder's business.
 
