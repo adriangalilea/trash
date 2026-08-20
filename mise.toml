@@ -8,7 +8,7 @@
 
 [env]
 # SwiftPM has no version field; the tag IS the version.
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 [tasks.build]
 description = "Build the trash binary (release)"
