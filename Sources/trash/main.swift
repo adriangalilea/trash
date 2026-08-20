@@ -234,7 +234,7 @@ func help() {
 
         usage:
           trash <paths...>               move to Trash (records origin, prints breadcrumb)
-          trash list                     Trash contents: name, when, origin
+          trash list (or: ls)            Trash contents: name, when, origin
           trash restore <name> [dir]     restore to origin (or into dir)
           trash empty [-f]               empty the Trash (asks unless -f)
 
