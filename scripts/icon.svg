@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- trash icon: a can wearing the undo glyph, drawn in CLI phosphor green.
+       ONE hue, intensity is the only variable (badge 1.0 + glow, can .78,
+       ribs .32): the terminal the tool lives in. Restore is the identity:
+       this trash gives things back. Source of truth for Resources/icon.png. -->
+  <defs>
+    <radialGradient id="plate" cx="0.5" cy="0.42" r="0.75">
+      <stop offset="0" stop-color="#0b130d"/>
+      <stop offset="1" stop-color="#040807"/>
+    </radialGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#plate)"/>
+
+  <!-- the can: handle, lid resting on the walls, tapered body, soft ribs -->
+  <g stroke="#2ecb58" stroke-width="28" stroke-linecap="round"
+     stroke-linejoin="round" fill="none">
+    <path d="M 462 330 Q 462 286 512 286 Q 562 286 562 330"/>
+    <line x1="342" y1="330" x2="682" y2="330"/>
+    <path d="M 368 358 L 396 750 Q 400 790 440 790 L 584 790 Q 624 790 628 750 L 656 358"/>
+  </g>
+  <g stroke="#1a5f2c" stroke-width="14" stroke-linecap="round" fill="none">
+    <line x1="448" y1="400" x2="456" y2="720"/>
+    <line x1="512" y1="400" x2="512" y2="720"/>
+    <line x1="576" y1="400" x2="568" y2="720"/>
+  </g>
+
+  <!-- the undo badge, full phosphor + glow: the element that says "given back" -->
+  <g>
+    <g filter="url(#glow)" opacity="0.85">
+      <path d="M 565.5 500.6 A 80 80 0 1 1 458.5 500.6" stroke="#38ff6e" stroke-width="28"
+            stroke-linecap="round" fill="none"/>
+      <path d="M 503.1 460.5 L 483.9 528.8 L 433.1 472.4 Z" fill="#38ff6e"/>
+    </g>
+    <path d="M 565.5 500.6 A 80 80 0 1 1 458.5 500.6" stroke="#38ff6e" stroke-width="28"
+          stroke-linecap="round" fill="none"/>
+    <path d="M 503.1 460.5 L 483.9 528.8 L 433.1 472.4 Z" fill="#38ff6e"/>
+  </g>
+</svg>
