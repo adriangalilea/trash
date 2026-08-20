@@ -18,6 +18,11 @@ func warn(_ msg: String) {
     FileHandle.standardError.write(Data("trash: \(msg)\n".utf8))
 }
 
+// stderr without the "trash: " prefix: breadcrumbs, not diagnostics
+func note(_ msg: String) {
+    FileHandle.standardError.write(Data("\(msg)\n".utf8))
+}
+
 @MainActor func trashDir() -> URL {
     fm.urls(for: .trashDirectory, in: .userDomainMask).first
         ?? fm.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
@@ -88,13 +93,21 @@ let dateFmt: DateFormatter = {
         var landed: NSURL?
         do {
             try fm.trashItem(at: url, resultingItemURL: &landed)
+            // Undo breadcrumb on STDERR: stdout stays empty exactly like
+            // /usr/bin/trash, so pipes and command substitution never see a
+            // difference, while terminals and transcripts still get the log.
+            var crumb = "trashed: \(tilde(origin))"
             if let landedURL = landed as URL? {
                 origin.withCString {
                     _ = setxattr(landedURL.path, originXattr, $0, strlen($0), 0, XATTR_NOFOLLOW)
                 }
+                // A collision rename means the restore name is no longer what
+                // was typed; say so, or restore becomes a guessing game.
+                if landedURL.lastPathComponent != url.lastPathComponent {
+                    crumb += " (in Trash as '\(landedURL.lastPathComponent)')"
+                }
             }
-            // undo breadcrumb: the origin lands in shell history and transcripts
-            print("trashed: \(tilde(origin))")
+            note(crumb)
         } catch {
             warn("\(p): \(error.localizedDescription)")
             failed = true

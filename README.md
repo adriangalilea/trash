@@ -20,8 +20,10 @@ This tool is both: it moves files with `FileManager.trashItem`, the same API
 Finder uses, and stamps each item with an xattr
 (`com.adriangalilea.trash.origin`) holding its original absolute path. That
 xattr is what `restore` reads to put a file back where it lived. Every trash
-prints a `trashed: <origin>` breadcrumb, so your shell history doubles as an
-undo log.
+prints a `trashed: <origin>` breadcrumb to stderr, so your terminal doubles
+as an undo log while stdout stays byte-identical to `/usr/bin/trash` (empty):
+scripts and pipes never see a difference. When macOS renames on collision the
+breadcrumb says so: `trashed: ~/a/dup.txt (in Trash as 'dup.txt 14-27-01.txt')`.
 
 It deliberately shadows `/usr/bin/trash` (install to a PATH dir that wins):
 the base case is identical by construction, and if the binary is ever
