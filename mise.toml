@@ -10,7 +10,7 @@
 # SwiftPM has no version field; the tag IS the version: BARE semver
 # (garden notes convention). v-prefixed twins exist for 1.0.0/1.1.0 only
 # because the first brew formula URL pinned v1.1.0; bare-only from here.
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 [tasks.build]
 description = "Build the trash binary (release)"

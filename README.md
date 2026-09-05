@@ -29,6 +29,17 @@ It deliberately shadows `/usr/bin/trash` (install to a PATH dir that wins):
 the base case is identical by construction, and if the binary is ever
 missing, PATH falls through to Apple's and you lose only the extras.
 
+## It empties what Finder can't
+
+macOS hides AppleDouble `._` metadata files in the Trash from Finder and
+from every app built on Foundation's directory listing. A Trash can hold
+thousands of them - typically left behind after deleting folders that once
+lived on exFAT/FAT drives - while Finder shows it empty and greys out
+Empty Trash, keeping the bytes on disk indefinitely. `trash list` reports
+them, `trash empty` deletes them with everything else, and the
+confirmation states both counts. Check yours: `ls -A ~/.Trash` next to an
+"empty" Trash can be a surprise.
+
 ## Install
 
 ```sh

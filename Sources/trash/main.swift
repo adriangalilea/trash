@@ -70,6 +70,36 @@ struct Entry {
         .sorted { ($0.added ?? .distantPast) > ($1.added ?? .distantPast) }
 }
 
+// Ground truth for what the Trash holds: readdir(2). Foundation's
+// contentsOfDirectory COALESCES AppleDouble sidecars - "._x" is presented as
+// metadata of "x", or omitted outright when no "x" exists - and Finder shares
+// the blindness: a Trash holding only "._" files renders as empty and greys
+// out Empty Trash, while the bytes stay on disk. Only the BSD layer tells
+// the truth, so phantom = on disk per readdir, invisible per Foundation.
+@MainActor func rawNames() -> [(name: String, isDir: Bool)] {
+    guard let d = opendir(trashDir().path) else { return [] }
+    defer { closedir(d) }
+    var out: [(String, Bool)] = []
+    while let e = readdir(d) {
+        let name = withUnsafeBytes(of: e.pointee.d_name) { raw in
+            String(cString: raw.baseAddress!.assumingMemoryBound(to: CChar.self))
+        }
+        if name == "." || name == ".." { continue }
+        out.append((name, Int32(e.pointee.d_type) == DT_DIR))
+    }
+    return out
+}
+
+@MainActor func phantoms() -> [(name: String, isDir: Bool)] {
+    var visible = Set((try? fm.contentsOfDirectory(atPath: trashDir().path)) ?? [])
+    visible.insert(".DS_Store")  // real, but Finder-owned - not a phantom
+    return rawNames().filter { !visible.contains($0.name) }
+}
+
+func plural(_ n: Int, _ word: String) -> String {
+    "\(n) \(word)\(n == 1 ? "" : "s")"
+}
+
 let dateFmt: DateFormatter = {
     let f = DateFormatter()
     f.dateFormat = "yyyy-MM-dd HH:mm"
@@ -118,18 +148,34 @@ let dateFmt: DateFormatter = {
 
 @MainActor func cmdList() {
     let all = entries()
-    guard !all.isEmpty else {
+    let ghosts = phantoms()
+    if all.isEmpty && ghosts.isEmpty {
         print("Trash is empty")
         return
     }
-    let nameWidth = min(max(all.map { $0.name.count }.max() ?? 4, 4), 44)
-    for e in all {
-        let name =
-            e.name.count > nameWidth ? String(e.name.prefix(nameWidth - 1)) + "…" : e.name
-        let date = e.added.map { dateFmt.string(from: $0) } ?? String(repeating: " ", count: 16)
-        let origin = e.origin.map(tilde) ?? "(origin unknown: trashed outside this tool)"
-        print(
-            "\(name.padding(toLength: nameWidth, withPad: " ", startingAt: 0))  \(date)  \(origin)")
+    if !all.isEmpty {
+        let nameWidth = min(max(all.map { $0.name.count }.max() ?? 4, 4), 44)
+        for e in all {
+            let name =
+                e.name.count > nameWidth ? String(e.name.prefix(nameWidth - 1)) + "…" : e.name
+            let date =
+                e.added.map { dateFmt.string(from: $0) } ?? String(repeating: " ", count: 16)
+            let origin = e.origin.map(tilde) ?? "(origin unknown: trashed outside this tool)"
+            print(
+                "\(name.padding(toLength: nameWidth, withPad: " ", startingAt: 0))  \(date)  \(origin)"
+            )
+        }
+    }
+    if !ghosts.isEmpty {
+        let what = "\(plural(ghosts.count, "hidden \"._\" metadata file")) invisible to Finder"
+        if all.isEmpty {
+            print(
+                "No restorable items, but \(what) remain on disk\n"
+                    + "(Finder shows this Trash as empty and greys out Empty Trash).\n"
+                    + "`trash empty` removes them.")
+        } else {
+            print("+ \(what) - `trash empty` removes them too")
+        }
     }
 }
 
@@ -200,14 +246,20 @@ let dateFmt: DateFormatter = {
 @MainActor func cmdEmpty(_ args: [String]) {
     let force = args.contains("-f") || args.contains("--force")
     let all = entries()
-    guard !all.isEmpty else {
+    let ghostCount = phantoms().count
+    guard !all.isEmpty || ghostCount > 0 else {
         print("Trash is empty")
         return
     }
     if !force {
-        let n = all.count
+        var what = [String]()
+        if !all.isEmpty { what.append(plural(all.count, "item")) }
+        if ghostCount > 0 {
+            what.append(
+                "\(plural(ghostCount, "hidden \"._\" metadata file")) Finder cannot see")
+        }
         print(
-            "Empty the Trash? \(n) item\(n == 1 ? "" : "s") will be PERMANENTLY deleted. [y/N] ",
+            "Empty the Trash? \(what.joined(separator: " + ")) will be PERMANENTLY deleted. [y/N] ",
             terminator: "")
         guard let a = readLine(), a.lowercased() == "y" else {
             print("Cancelled")
@@ -223,8 +275,24 @@ let dateFmt: DateFormatter = {
             failed = true
         }
     }
+    // Phantom sweep AFTER the visible pass and RE-SCANNED: removing "x" may
+    // take its coalesced "._x" along, so the prompt's count is a ceiling.
+    var ghostsRemoved = 0
+    for g in phantoms() {
+        let p = trashDir().appendingPathComponent(g.name).path
+        let ok = g.isDir ? (try? fm.removeItem(atPath: p)) != nil : unlink(p) == 0
+        if ok {
+            ghostsRemoved += 1
+        } else {
+            warn("\(g.name): cannot remove")
+            failed = true
+        }
+    }
     if failed { exit(1) }
-    print("Trash emptied (\(all.count) item\(all.count == 1 ? "" : "s"))")
+    var did = [String]()
+    if !all.isEmpty { did.append(plural(all.count, "item")) }
+    if ghostsRemoved > 0 { did.append(plural(ghostsRemoved, "hidden metadata file")) }
+    print("Trash emptied (\(did.joined(separator: " + ")))")
 }
 
 func help() {
@@ -236,11 +304,13 @@ func help() {
           trash <paths...>               move to Trash (records origin, prints breadcrumb)
           trash list (or: ls)            Trash contents: name, when, origin
           trash restore <name> [dir]     restore to origin (or into dir)
-          trash empty [-f]               empty the Trash (asks unless -f)
+          trash empty [-f]               empty the Trash, invisible leftovers included (asks unless -f)
 
         A file literally named list/restore/empty/help: trash ./list  (or trash -- list)
         Items trashed by Finder or other tools have no recorded origin; restore
         them with an explicit destination, or with Finder's own Put Back.
+        Finder cannot see AppleDouble "._" files in the Trash (an emptied-looking
+        Trash can still hold thousands); list reports them, empty removes them.
         """)
 }
 
