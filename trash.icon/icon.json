@@ -1,0 +1,82 @@
+{
+  "fill" : {
+    "linear-gradient" : [
+      "display-p3:0.200,0.200,0.215,1.000",
+      "display-p3:0.075,0.075,0.085,1.000"
+    ]
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "blend-mode" : "normal",
+          "fill" : "automatic",
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "ribs.svg",
+          "name" : "ribs"
+        }
+      ],
+      "lighting" : "individual",
+      "name" : "ribs",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "blend-mode" : "normal",
+          "fill" : "automatic",
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "bin.svg",
+          "name" : "bin"
+        }
+      ],
+      "lighting" : "individual",
+      "name" : "bin",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "blend-mode" : "normal",
+          "fill" : "automatic",
+          "glass" : true,
+          "hidden" : false,
+          "image-name" : "arrow.svg",
+          "name" : "arrow"
+        }
+      ],
+      "lighting" : "individual",
+      "name" : "arrow",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

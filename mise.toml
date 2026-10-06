@@ -4,6 +4,7 @@
 #   uninstall  remove the installed binary (PATH falls back to /usr/bin/trash)
 #   check      compile, debug: the fast typecheck
 #   format     swift-format in place (the Xcode toolchain's)
+#   icon       trash.icon (Icon Composer, SVG layers) → Resources/icon.png, the site's icon (swift-utils' mark)
 #   clean      remove the build directory
 
 [env]
@@ -32,6 +33,17 @@ run = "swift build"
 [tasks.format]
 description = "swift-format in place"
 run = "xcrun swift-format --recursive Sources/ --in-place"
+
+# One drawing, every icon file: trash.icon (Icon Composer's package, its
+# layers SVG) is the icon; swift-utils' `mark` renders the site's icon.png
+# from it, build output never committed. `mark preview trash.icon` is the
+# review. Skipped while the package is unchanged.
+[tasks.icon]
+description = "Compile trash.icon: Resources/icon.png (swift-utils' mark)"
+tools = { "spm:adriangalilea/swift-utils" = { version = "0.20.0", filter_bins = "mark,ship" } }
+sources = ["trash.icon/icon.json", "trash.icon/Assets/*.svg"]
+outputs = ["Resources/icon.png"]
+run = "mark build trash.icon --out Resources --png Resources/icon.png"
 
 [tasks.clean]
 description = "Remove the build directory"

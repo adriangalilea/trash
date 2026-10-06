@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- the open bin, tapered, the steel the ribs stand on. -->
+  <path transform="translate(0 30)" d="M 344 372 L 680 372 Q 694 372 693 386 L 653 812 Q 652 826 638 826 L 386 826 Q 372 826 371 812 L 331 386 Q 330 372 344 372 Z" fill="#8e9399"/>
+</svg>
