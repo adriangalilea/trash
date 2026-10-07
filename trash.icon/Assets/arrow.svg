@@ -1,11 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- in and out, one terminal green, two straight arrows behind the can's
-       mouth, the same size and height: in, on the left, its point just
-       inside; out, on the right, rising from inside. -->
-  <g fill="#39ff6a" stroke="#39ff6a" stroke-linejoin="round">
-    <path d="M 452 190 L 452 346" stroke-width="44" fill="none"/>
-    <path d="M 452 414 L 402 342 L 502 342 Z" stroke-width="12"/>
-    <path d="M 572 450 L 572 262" stroke-width="44" fill="none"/>
-    <path d="M 572 190 L 522 262 L 622 262 Z" stroke-width="12"/>
+  <!-- in and out, one terminal green, one size, long: both span 150..640,
+       from above the rim to deep inside, seen soft through the bin below the
+       rim. In, on the left, pointing down into it; out, on the right, rising
+       from inside. Shafts 56 wide, heads 130: present, not heavy. -->
+  <g fill="#39ff6a">
+    <rect x="424" y="150" width="56" height="396" rx="9"/>
+    <path d="M 452 640 L 387 540 L 517 540 Z" stroke="#39ff6a" stroke-width="12" stroke-linejoin="round"/>
+    <rect x="544" y="244" width="56" height="396" rx="9"/>
+    <path d="M 572 150 L 507 250 L 637 250 Z" stroke="#39ff6a" stroke-width="12" stroke-linejoin="round"/>
   </g>
 </svg>

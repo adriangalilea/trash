@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- the front of Apple's bin, frosted glass, over the arrows: the body hangs
+       from the rim's near edge, its sides tapering in, its foot nearly flat
+       with tight round corners, as Apple's; pale and see-through, so the inside shows
+       soft through it. Over it, the rim's near half, brighter. Numbers shared
+       with bin.svg. -->
+  <defs>
+    <linearGradient id="frost" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eef0f2"/>
+      <stop offset="1" stop-color="#cfd2d6"/>
+    </linearGradient>
+  </defs>
+  <path d="M 282 339 L 321 804 Q 324 848 370 850 Q 512 855 654 850 Q 700 848 703 804 L 742 339 A 53 53 0 0 1 689 392 L 335 392 A 53 53 0 0 1 282 339 Z" fill="url(#frost)" fill-opacity="0.92"/>
+  <path d="M 282 339 A 53 53 0 0 0 335 392 L 689 392 A 53 53 0 0 0 742 339 L 720 339 A 39 39 0 0 1 681 378 L 343 378 A 39 39 0 0 1 304 339 Z" fill="#f8f9fa"/>
+</svg>
