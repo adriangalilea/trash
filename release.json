@@ -1,0 +1,6 @@
+{
+  "app": "trash",
+  "trees": [{ "name": "trash", "path": "." }],
+  "script": "scripts/release",
+  "artifacts": ["dist"]
+}

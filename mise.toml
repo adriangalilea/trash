@@ -1,50 +1,112 @@
-# trash: macOS Trash CLI. The verbs (`mise <task>` from the repo root):
-#   build      the binary (release)
-#   install    build + install to ~/.local/bin/trash (shadows /usr/bin/trash on purpose)
-#   uninstall  remove the installed binary (PATH falls back to /usr/bin/trash)
-#   check      compile, debug: the fast typecheck
+# trash: the macOS Trash from the command line. The verbs (`mise <task>` from
+# the repo root; install collides with a mise builtin, so `mise run install`):
+#   build      the command (release)
+#   check      format + compile, debug: the gate
 #   format     swift-format in place (the Xcode toolchain's)
-#   icon       trash.icon (Icon Composer, SVG layers) → Resources/icon.png, the site's icon (swift-utils' mark)
-#   clean      remove the build directory
+#   icon       trash.icon (Icon Composer, SVG layers) → Resources/: Assets.car, trash.icns, icon.png (swift-utils' mark)
+#   install    trash.app → ~/Applications, `trash` → ~/.local/bin, signed with YOUR certificate (SIGN_ID)
+#   notes      draft notes/$VERSION.md from the commits (you then rewrite it)
+#   release    `ship release` (one approval: the notarized dmg of these commits), then `ship publish`: tag → GitHub Release → publish → cask ($TAP)
+#   ship-check what would stop a release right now
+#   publish    dmg → R2 behind trash.untitled.garden/releases (the counted url) + notes → garden ($GARDEN)
+#   clean      remove the build directory and dist
 
 [env]
-# SwiftPM has no version field; the tag IS the version: BARE semver
-# (garden notes convention). v-prefixed twins exist for 1.0.0/1.1.0 only
-# because the first brew formula URL pinned v1.1.0; bare-only from here.
-VERSION = "1.2.0"
+# THE VERSION, single source of truth: it stamps Info.plist and names the tag
+# (bare semver; the v-prefixed 1.0.0/1.1.0 tags are history).
+VERSION = "1.3.0"
+DIST = "dist"
 
 [tasks.build]
-description = "Build the trash binary (release)"
+description = "Build the trash command (release)"
 run = "swift build -c release"
 
-[tasks.install]
-description = "Install to ~/.local/bin/trash"
-depends = ["build"]
-run = "install -d $HOME/.local/bin && install -m 755 .build/release/trash $HOME/.local/bin/trash"
-
-[tasks.uninstall]
-description = "Remove ~/.local/bin/trash"
-run = "rm -f $HOME/.local/bin/trash"
-
 [tasks.check]
-description = "Compile everything, debug"
-run = "swift build"
+description = "format + compile everything, debug"
+run = ["mise run format", "swift build"]
 
 [tasks.format]
 description = "swift-format in place"
-run = "xcrun swift-format --recursive Sources/ --in-place"
+run = "xcrun swift-format --recursive Sources/ Package.swift --in-place"
 
 # One drawing, every icon file: trash.icon (Icon Composer's package, its
-# layers SVG) is the icon; swift-utils' `mark` renders the site's icon.png
-# from it, build output never committed. `mark preview trash.icon` is the
-# review. Skipped while the package is unchanged.
+# layers SVG) is the icon; swift-utils' `mark` compiles the bundle's glass
+# Assets.car, its flat trash.icns and the site's icon.png, build output never
+# committed. `mark preview trash.icon` is the review. Skipped while unchanged.
 [tasks.icon]
-description = "Compile trash.icon: Resources/icon.png (swift-utils' mark)"
-tools = { "spm:adriangalilea/swift-utils" = { version = "0.20.0", filter_bins = "mark,ship" } }
+description = "Compile trash.icon: Resources/Assets.car + trash.icns + icon.png (swift-utils' mark)"
+tools = { "spm:adriangalilea/swift-utils" = { version = "0.37.1", filter_bins = "grant,ship,mark,since" } }
 sources = ["trash.icon/icon.json", "trash.icon/Assets/*.svg"]
-outputs = ["Resources/icon.png"]
+outputs = ["Resources/Assets.car", "Resources/trash.icns", "Resources/icon.png"]
 run = "mark build trash.icon --out Resources --png Resources/icon.png"
 
+# From source with a certificate of your own: trash.app needs a stable
+# signature, since macOS ties its Full Disk Access to it (an unsigned build's
+# grant is lost at the next rebuild). Without one, `swift build` gives the
+# plain command, which works wherever the terminal may read the Trash.
+[tasks.install]
+description = "trash.app → ~/Applications (signed with SIGN_ID), trash → ~/.local/bin"
+depends = ["build", "icon"]
+run = '''
+set -e
+[ -n "$SIGN_ID" ] || { echo "SIGN_ID is not set: your signing identity (security find-identity -v -p codesigning)"; exit 1; }
+app="$HOME/Applications/trash.app"
+scripts/assemble.sh "$app"
+codesign --force --options runtime --sign "$SIGN_ID" "$app"
+mkdir -p "$HOME/.local/bin"
+ln -sf "$app/Contents/MacOS/trash" "$HOME/.local/bin/trash"
+echo "installed $app (+ trash on PATH); open it once to give it Full Disk Access"
+'''
+
 [tasks.clean]
-description = "Remove the build directory"
-run = "rm -rf .build"
+description = "Remove the build directory and dist"
+run = "rm -rf .build dist"
+
+[tasks.notes]
+description = "Draft notes/$VERSION.md from the commits since the last tag (rewrite it before releasing)"
+run = '''
+test ! -f "notes/$VERSION.md" || { echo "notes/$VERSION.md exists already: edit it"; exit 1; }
+git log "$(git describe --tags --abbrev=0)..HEAD" --format='- %s' > "notes/$VERSION.md"
+echo "drafted notes/$VERSION.md"
+'''
+
+# swift-utils' `ship`, one release for every app. A task tool, not [tools]: CI
+# never releases, so it never builds it.
+[tasks.release]
+description = "ship release (one approval: the notarized dmg of these commits), then ship publish: tag, GitHub Release, publish, cask"
+depends = ["check", "ship-check"]
+tools = { "spm:adriangalilea/swift-utils" = { version = "0.37.1", filter_bins = "grant,ship,mark,since" } }
+run = '''
+ship release
+ship publish --name trash --app "$DIST/trash.app" --github --after "mise run publish" --cask
+'''
+
+# Inside `ship release` only (scripts/release): its keychain and key are in
+# the environment, and ship build refuses anywhere else.
+[tasks."release:build"]
+description = "ship build, inside ship release: signed, notarized dmg in $DIST"
+tools = { "spm:adriangalilea/swift-utils" = { version = "0.37.1", filter_bins = "grant,ship,mark,since" } }
+run = '''
+ship build --team G387QW47LV --name trash --app "$DIST/trash.app" \
+  --assemble "mise run build && scripts/assemble.sh $DIST/trash.app"
+'''
+
+[tasks.ship-check]
+description = "ship check: what would stop a release right now"
+tools = { "spm:adriangalilea/swift-utils" = { version = "0.37.1", filter_bins = "grant,ship,mark,since" } }
+run = 'ship check --name trash --app "$DIST/trash.app" --github --cask'
+
+# The garden half of a release, ship's --after: the dmg behind the counted
+# download URL, the notes on the surface. It runs BEFORE the cask bump: the
+# cask's URL is this one. GARDEN names the untitled garden checkout; unset (a
+# fork), it is skipped and downloads go uncounted.
+[tasks.publish]
+description = "dmg → R2 behind trash.untitled.garden/releases (the counted url) + notes → garden"
+run = '''
+dmg="$DIST/trash-$VERSION.dmg"
+test -f "$dmg" || { echo "no $dmg: run 'mise release'"; exit 1; }
+if [ -z "$GARDEN" ]; then echo "GARDEN is not set, skipping publish (downloads uncounted)"; exit 0; fi
+test -d "$GARDEN/tools/release" || { echo "GARDEN=$GARDEN is not the garden checkout"; exit 1; }
+url=$(pnpm --dir "$GARDEN/tools/release" exec tsx dmg.ts trash "$PWD/$dmg") && echo "published $url"
+cd "$GARDEN" && pnpm --silent garden notes trash
+'''
