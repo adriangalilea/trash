@@ -21,11 +21,15 @@ enum GrantWindow {
         if PermissionGrant.readTheTrash.isAllowed { exit(0) }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
-        let window = NSWindow(
-            contentViewController: NSHostingController(
-                rootView: PermissionGrant.Steps([.readTheTrash]) { exit(0) }
-                    .padding(32)
-                    .frame(width: 480)))
+        // One grant: its page (title, why, the one button), the window sized to
+        // it, gone the moment the switch is on.
+        let page = NSHostingController(
+            rootView: PermissionGrant.Page(.readTheTrash).padding(40).frame(width: 460))
+        page.sizingOptions = [.preferredContentSize]
+        PermissionGrant.readTheTrash.observe { standing in
+            if standing.grade == .good { exit(0) }
+        }
+        let window = NSWindow(contentViewController: page)
         window.title = "trash"
         window.styleMask.remove(.resizable)
         window.center()

@@ -109,9 +109,11 @@ enum AsApp {
     }
 
     /// trash.app's grant window (GrantWindow), waited for: it closes itself
-    /// the moment the grant is on, or when the person closes it.
+    /// the moment the grant is on, or when the person closes it. Never a new
+    /// instance (no -n): a second command needing the grant meanwhile waits on
+    /// the window already open instead of opening another.
     static func askForGrant(_ app: URL) {
-        open(["-W", "-n", app.path, "--args", grant])
+        open(["-W", app.path, "--args", grant])
     }
 
     /// /usr/bin/open, its exit status and what it said on stderr.
