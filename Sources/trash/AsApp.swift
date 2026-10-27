@@ -41,18 +41,24 @@ func answer(_ request: Request) -> Reply {
 }
 
 /// The operation, here when macOS lets this process read the Trash, else as
-/// trash.app. Every operation reads the Trash before changing anything, so a
-/// refusal here has done nothing yet.
+/// trash.app; when trash.app doesn't hold Full Disk Access yet, it asks for it
+/// (its grant window) and the operation runs once more after. Every operation
+/// reads the Trash before changing anything, so a refusal has done nothing yet.
 func perform(_ request: Request) -> (Reply, Runner) {
     let here = answer(request)
     guard case .failed(.unreadable(EPERM)) = here, let app = AsApp.bundle else {
         return (here, .here)
     }
+    let first = AsApp.run(request, app)
+    guard case .failed(.unreadable(EPERM)) = first else { return (first, .app(app)) }
+    note("trash.app is asking for Full Disk Access, once: its window is open. Waiting…")
+    AsApp.askForGrant(app)
     return (AsApp.run(request, app), .app(app))
 }
 
 enum AsApp {
     static let serve = "--serve"
+    static let grant = "--grant"
 
     /// The trash.app this binary is inside, through any symlink (Homebrew's
     /// bin link); nil for a bare build.
@@ -102,12 +108,10 @@ enum AsApp {
         exit(0)
     }
 
-    /// trash.app opened by a person (Finder, Spotlight): it shows where to give
-    /// it Full Disk Access, with itself beside the list to drag in.
-    static func setUp() -> Never {
-        _ = open(["x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"])
-        if let bundle { _ = open(["-R", bundle.path]) }
-        exit(0)
+    /// trash.app's grant window (GrantWindow), waited for: it closes itself
+    /// the moment the grant is on, or when the person closes it.
+    static func askForGrant(_ app: URL) {
+        open(["-W", "-n", app.path, "--args", grant])
     }
 
     /// /usr/bin/open, its exit status and what it said on stderr.

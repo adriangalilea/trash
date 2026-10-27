@@ -7,6 +7,7 @@
 // exit 0), superset otherwise. If this binary is missing, PATH falls through
 // to Apple's and only the extras are lost.
 import Foundation
+import PermissionGrants
 import TrashKit
 
 func fail(_ message: String) -> Never {
@@ -43,10 +44,8 @@ func explain(_ error: TrashError, _ runner: Runner) -> String {
         let folder = tilde(Trash().folder.path)
         switch runner {
         case .app(let app):
-            return
-                "trash.app cannot read the Trash (\(folder)) yet: it needs Full Disk Access, once."
-                + "\nopen \(tilde(app.path)) to set it up (it opens the list and shows itself to add),"
-                + " or System Settings › Privacy & Security › Full Disk Access › +"
+            return "trash.app cannot read the Trash (\(folder)): it was not given Full Disk Access."
+                + "\nopen \(tilde(app.path)) to give it, then run this again"
         case .here:
             return
                 "cannot read the Trash (\(folder)): macOS lets only a process with Full Disk Access read it, and never asks."
@@ -215,12 +214,18 @@ func help() {
 
 // MARK: - dispatch
 
+// A launch as the permissions' fresh probe answers and exits (swift-utils
+// PermissionGrants), before anything else.
+PermissionGrant.answerProbeIfAsked()
+
 let arguments = Array(CommandLine.arguments.dropFirst())
 
 if arguments.first == AsApp.serve { AsApp.answerAndExit(Array(arguments.dropFirst())) }
-// Opened as an app (Finder, Spotlight: no arguments, launched by launchd):
-// show where it gets Full Disk Access.
-if arguments.isEmpty && getppid() == 1 && AsApp.bundle != nil { AsApp.setUp() }
+// Asked for its grant by the command, or opened as an app by a person
+// (Finder, Spotlight: no arguments, launched by launchd): the grant window.
+if arguments.first == AsApp.grant || (arguments.isEmpty && getppid() == 1 && AsApp.bundle != nil) {
+    GrantWindow.run()
+}
 if arguments.isEmpty {
     help()
     exit(2)

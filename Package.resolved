@@ -1,0 +1,33 @@
+{
+  "originHash" : "af17c1046f6d61d308047337473c1b14dce803c98a61b9a04c69501ba4b4536a",
+  "pins" : [
+    {
+      "identity" : "highlightr",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/raspu/Highlightr",
+      "state" : {
+        "revision" : "05e7fcc63b33925cd0c1faaa205cdd5681e7bbef",
+        "version" : "2.3.0"
+      }
+    },
+    {
+      "identity" : "swift-cmark",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-cmark",
+      "state" : {
+        "revision" : "08ddb528923cc1a6527e02b7a1aee9e516ca749a",
+        "version" : "0.9.0"
+      }
+    },
+    {
+      "identity" : "swift-utils",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/adriangalilea/swift-utils",
+      "state" : {
+        "revision" : "0d58ab3280288b5abdf13385c20fa8bf4292bec4",
+        "version" : "0.38.12"
+      }
+    }
+  ],
+  "version" : 3
+}

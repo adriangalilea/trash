@@ -61,9 +61,11 @@ So `trash` reads the Trash itself first, and only when macOS refuses does it
 run the same operation again as `trash.app`: opened through LaunchServices,
 the app is its own app to macOS and holds its own grant, does the one
 operation, hands back the answer and exits. No background process, and one
-implementation either way. Give it the grant once: open `trash.app`, which
-opens System Settings at Full Disk Access and shows itself in Finder to drag
-into the list. A terminal that already has Full Disk Access never involves it.
+implementation either way. The first time it needs the grant, `trash.app`
+asks for it (swift-utils PermissionGrants: its window says what and why, its
+button opens the switch, and it closes itself the moment the switch is on),
+then the command you ran finishes. A terminal that already has Full Disk
+Access never involves it.
 
 ## From source
 
@@ -94,6 +96,7 @@ build's grant is lost at the next rebuild): with a certificate of your own,
 
 ## Requirements
 
-macOS 13+. Built with SwiftPM; no dependencies. `TrashKit` is everything
+macOS 26+. Built with SwiftPM; one dependency, swift-utils' `PermissionGrants`
+for trash.app's grant. `TrashKit` is everything
 done to the Trash (no printing, no exits); the `trash` target is the command's
 words and the run-as-app hop (`Sources/trash/AsApp.swift`).
