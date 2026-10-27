@@ -1,316 +1,195 @@
-// trash: macOS Trash CLI. Native ~/.Trash via FileManager.trashItem (the same
-// API Finder uses), plus an xattr stamped on every trashed item recording its
-// origin path, which is what makes `trash restore` a real Put Back.
-// Shadows /usr/bin/trash deliberately: identical base case, superset otherwise.
-// If this binary is missing, PATH falls through to Apple's and only the extras
-// are lost.
+// trash: the macOS Trash from the command line, with a real Put Back. This
+// file is the words: it reads the arguments, has TrashKit do the work (here,
+// or as trash.app: AsApp.swift), and says what happened. Nothing is ever
+// reported that didn't happen: an unreadable Trash is an error with its fix,
+// never an empty Trash.
+// Shadows /usr/bin/trash deliberately: identical base case (stdout empty,
+// exit 0), superset otherwise. If this binary is missing, PATH falls through
+// to Apple's and only the extras are lost.
 import Foundation
+import TrashKit
 
-let originXattr = "com.adriangalilea.trash.origin"
-let fm = FileManager.default
-
-func die(_ msg: String) -> Never {
-    FileHandle.standardError.write(Data("trash: \(msg)\n".utf8))
+func fail(_ message: String) -> Never {
+    FileHandle.standardError.write(Data("trash: \(message)\n".utf8))
     exit(1)
 }
 
-func warn(_ msg: String) {
-    FileHandle.standardError.write(Data("trash: \(msg)\n".utf8))
+func warn(_ message: String) {
+    FileHandle.standardError.write(Data("trash: \(message)\n".utf8))
 }
 
-// stderr without the "trash: " prefix: breadcrumbs, not diagnostics
-func note(_ msg: String) {
-    FileHandle.standardError.write(Data("\(msg)\n".utf8))
+/// stderr without the "trash: " prefix: breadcrumbs, not diagnostics.
+func note(_ message: String) {
+    FileHandle.standardError.write(Data("\(message)\n".utf8))
 }
 
-@MainActor func trashDir() -> URL {
-    fm.urls(for: .trashDirectory, in: .userDomainMask).first
-        ?? fm.homeDirectoryForCurrentUser.appendingPathComponent(".Trash")
-}
-
-@MainActor func tilde(_ path: String) -> String {
-    let home = fm.homeDirectoryForCurrentUser.path
+func tilde(_ path: String) -> String {
+    let home = FileManager.default.homeDirectoryForCurrentUser.path
     return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
 }
 
-func readOrigin(_ path: String) -> String? {
-    let n = getxattr(path, originXattr, nil, 0, 0, XATTR_NOFOLLOW)
-    guard n > 0 else { return nil }
-    var buf = [UInt8](repeating: 0, count: n)
-    let r = getxattr(path, originXattr, &buf, n, 0, XATTR_NOFOLLOW)
-    guard r > 0 else { return nil }
-    return String(bytes: buf[0..<r], encoding: .utf8)
-}
+func plural(_ n: Int, _ word: String) -> String { "\(n) \(word)\(n == 1 ? "" : "s")" }
 
-struct Entry {
-    let url: URL
-    let name: String
-    let added: Date?
-    let origin: String?
-}
-
-// The Trash could not be read: said, never shown as an empty Trash. macOS
-// refuses ~/.Trash to a process without Full Disk Access and never asks for
-// it, so a terminal (or a terminal's pane daemon) without the grant gets
-// "Operation not permitted" while trashing still works.
-@MainActor func unreadable(_ errno: Int32) -> Never {
-    var msg = "cannot read the Trash (\(tilde(trashDir().path))): \(String(cString: strerror(errno)))"
-    if errno == EPERM {
-        msg += "\nmacOS lets only a process with Full Disk Access read it, and never asks:"
-            + " give it to the app this runs in (System Settings › Privacy & Security › Full Disk Access)"
-    }
-    die(msg)
-}
-
-// Home-volume Trash only; items trashed on other volumes land in that
-// volume's .Trashes and are Finder's business.
-@MainActor func entries() -> [Entry] {
-    let urls: [URL]
-    do {
-        urls = try fm.contentsOfDirectory(
-            at: trashDir(), includingPropertiesForKeys: [.addedToDirectoryDateKey], options: [])
-    } catch {
-        // Foundation's error wraps the POSIX one (257 over EPERM).
-        let posix = (error as NSError).userInfo[NSUnderlyingErrorKey] as? NSError
-        unreadable(Int32(posix?.code ?? Int(EPERM)))
-    }
-    return
-        urls
-        .filter { $0.lastPathComponent != ".DS_Store" }
-        .map { u in
-            Entry(
-                url: u,
-                name: u.lastPathComponent,
-                added: (try? u.resourceValues(forKeys: [.addedToDirectoryDateKey]))?
-                    .addedToDirectoryDate,
-                origin: readOrigin(u.path))
-        }
-        .sorted { ($0.added ?? .distantPast) > ($1.added ?? .distantPast) }
-}
-
-// Ground truth for what the Trash holds: readdir(2). Foundation's
-// contentsOfDirectory COALESCES AppleDouble sidecars - "._x" is presented as
-// metadata of "x", or omitted outright when no "x" exists - and Finder shares
-// the blindness: a Trash holding only "._" files renders as empty and greys
-// out Empty Trash, while the bytes stay on disk. Only the BSD layer tells
-// the truth, so phantom = on disk per readdir, invisible per Foundation.
-@MainActor func rawNames() -> [(name: String, isDir: Bool)] {
-    guard let d = opendir(trashDir().path) else { unreadable(errno) }
-    defer { closedir(d) }
-    var out: [(String, Bool)] = []
-    while let e = readdir(d) {
-        let name = withUnsafeBytes(of: e.pointee.d_name) { raw in
-            String(cString: raw.baseAddress!.assumingMemoryBound(to: CChar.self))
-        }
-        if name == "." || name == ".." { continue }
-        out.append((name, Int32(e.pointee.d_type) == DT_DIR))
-    }
-    return out
-}
-
-@MainActor func phantoms() -> [(name: String, isDir: Bool)] {
-    var visible = Set(entries().map(\.name))
-    visible.insert(".DS_Store")  // real, but Finder-owned - not a phantom
-    return rawNames().filter { !visible.contains($0.name) }
-}
-
-func plural(_ n: Int, _ word: String) -> String {
-    "\(n) \(word)\(n == 1 ? "" : "s")"
-}
-
-let dateFmt: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "yyyy-MM-dd HH:mm"
-    return f
+let stamp: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd HH:mm"
+    return formatter
 }()
+
+/// Every failure in words, with what to do about it.
+func explain(_ error: TrashError, _ runner: Runner) -> String {
+    switch error {
+    case .unreadable(let code) where code == EPERM:
+        let folder = tilde(Trash().folder.path)
+        switch runner {
+        case .app(let app):
+            return
+                "trash.app cannot read the Trash (\(folder)) yet: it needs Full Disk Access, once."
+                + "\nopen \(tilde(app.path)) to set it up (it opens the list and shows itself to add),"
+                + " or System Settings › Privacy & Security › Full Disk Access › +"
+        case .here:
+            return
+                "cannot read the Trash (\(folder)): macOS lets only a process with Full Disk Access read it, and never asks."
+                + "\ngive it to the app this runs in (System Settings › Privacy & Security › Full Disk Access),"
+                + " or install trash.app, which holds it for every terminal: brew install --cask adriangalilea/tap/trash"
+        }
+    case .unreadable(let code):
+        return "cannot read the Trash: \(String(cString: strerror(code)))"
+    case .noSuchFile(let path):
+        return "no such file: \(path)"
+    case .notTrashed(let path, let why):
+        return "\(path): \(why)"
+    case .originNotRecorded(let path, let name, let code):
+        return "trashed \(tilde(path)) as '\(name)', but its origin could not be recorded"
+            + " (\(String(cString: strerror(code)))): restore it with a destination, trash restore '\(name)' <dir>"
+    case .notInTrash(let name, let similar):
+        return "not in Trash: \(name)"
+            + (similar.isEmpty ? "" : "\ndid you mean: " + similar.joined(separator: ", "))
+    case .ambiguous(let name, let matches):
+        return "\(matches.count) items named '\(name)' in Trash:\n"
+            + matches.map {
+                "  \($0.added.map(stamp.string) ?? "?")  \($0.origin.map(tilde) ?? "(origin unknown)")"
+            }.joined(separator: "\n")
+            + "\nrestore via Finder, or empty the duplicates first"
+    case .notADirectory(let path):
+        return "destination is not a directory: \(path)"
+    case .noOrigin(let name):
+        return
+            "no origin recorded for '\(name)' (trashed outside this tool)\npass a destination: trash restore '\(name)' <dir>"
+    case .originFolderGone(let folder):
+        return
+            "original directory no longer exists: \(tilde(folder))\npass a destination: trash restore <name> <dir>"
+    case .wouldOverwrite(let path):
+        return "refusing to overwrite: \(tilde(path))"
+    case .notRestored(let name, let why):
+        return "\(name): restore failed: \(why)"
+    }
+}
 
 // MARK: - commands
 
-@MainActor func cmdTrash(_ paths: [String]) {
-    guard !paths.isEmpty else { die("no paths given (see `trash help`)") }
+func put(_ paths: [String]) {
+    guard !paths.isEmpty else { fail("no paths given (see `trash help`)") }
     var failed = false
-    for p in paths {
-        let url = URL(fileURLWithPath: p)
-        // lstat, so a dangling symlink is still trashable
-        guard (try? fm.attributesOfItem(atPath: url.path)) != nil else {
-            warn("no such file: \(p)")
-            failed = true
-            continue
-        }
-        let origin = url.standardizedFileURL.path
-        var landed: NSURL?
-        do {
-            try fm.trashItem(at: url, resultingItemURL: &landed)
-            // Undo breadcrumb on STDERR: stdout stays empty exactly like
-            // /usr/bin/trash, so pipes and command substitution never see a
-            // difference, while terminals and transcripts still get the log.
-            var crumb = "trashed: \(tilde(origin))"
-            if let landedURL = landed as URL? {
-                origin.withCString {
-                    _ = setxattr(landedURL.path, originXattr, $0, strlen($0), 0, XATTR_NOFOLLOW)
-                }
-                // A collision rename means the restore name is no longer what
-                // was typed; say so, or restore becomes a guessing game.
-                if landedURL.lastPathComponent != url.lastPathComponent {
-                    crumb += " (in Trash as '\(landedURL.lastPathComponent)')"
-                }
-            }
-            note(crumb)
+    for path in paths {
+        do throws(TrashError) {
+            let trashed = try Trash().put(path)
+            // The undo breadcrumb on STDERR: stdout stays empty exactly like
+            // /usr/bin/trash, so pipes never see a difference, while terminals
+            // and transcripts keep the log. A collision rename is said, or
+            // restore becomes a guessing game.
+            note(
+                "trashed: \(tilde(trashed.origin))"
+                    + (trashed.renamed.map { " (in Trash as '\($0)')" } ?? ""))
         } catch {
-            warn("\(p): \(error.localizedDescription)")
+            warn(explain(error, .here))
             failed = true
         }
     }
     if failed { exit(1) }
 }
 
-@MainActor func cmdList() {
-    let all = entries()
-    let ghosts = phantoms()
-    if all.isEmpty && ghosts.isEmpty {
-        print("Trash is empty")
-        return
-    }
-    if !all.isEmpty {
-        let nameWidth = min(max(all.map { $0.name.count }.max() ?? 4, 4), 44)
-        for e in all {
-            let name =
-                e.name.count > nameWidth ? String(e.name.prefix(nameWidth - 1)) + "…" : e.name
-            let date =
-                e.added.map { dateFmt.string(from: $0) } ?? String(repeating: " ", count: 16)
-            let origin = e.origin.map(tilde) ?? "(origin unknown: trashed outside this tool)"
-            print(
-                "\(name.padding(toLength: nameWidth, withPad: " ", startingAt: 0))  \(date)  \(origin)"
-            )
-        }
-    }
-    if !ghosts.isEmpty {
-        let what = "\(plural(ghosts.count, "hidden \"._\" metadata file")) invisible to Finder"
-        if all.isEmpty {
-            print(
-                "No restorable items, but \(what) remain on disk\n"
-                    + "(Finder shows this Trash as empty and greys out Empty Trash).\n"
-                    + "`trash empty` removes them.")
-        } else {
-            print("+ \(what) - `trash empty` removes them too")
-        }
+func listing() -> (Listing, Runner) {
+    let (reply, runner) = perform(.list)
+    switch reply {
+    case .listing(let listing): return (listing, runner)
+    case .failed(let error): fail(explain(error, runner))
+    default: fail("trash.app answered a list with something else")
     }
 }
 
-@MainActor func cmdRestore(_ args: [String]) {
-    guard let name = args.first else {
+func list() {
+    let (contents, _) = listing()
+    if contents.isEmpty {
+        print("Trash is empty")
+        return
+    }
+    let width = min(max(contents.items.map(\.name.count).max() ?? 4, 4), 44)
+    for item in contents.items {
+        let name = item.name.count > width ? String(item.name.prefix(width - 1)) + "…" : item.name
+        let added = item.added.map(stamp.string) ?? String(repeating: " ", count: 16)
+        let origin = item.origin.map(tilde) ?? "(origin unknown: trashed outside this tool)"
+        print("\(name.padding(toLength: width, withPad: " ", startingAt: 0))  \(added)  \(origin)")
+    }
+    guard !contents.hidden.isEmpty else { return }
+    let what = "\(plural(contents.hidden.count, "hidden \"._\" metadata file")) invisible to Finder"
+    if contents.items.isEmpty {
+        print(
+            "No restorable items, but \(what) remain on disk\n"
+                + "(Finder shows this Trash as empty and greys out Empty Trash).\n"
+                + "`trash empty` removes them.")
+    } else {
+        print("+ \(what) - `trash empty` removes them too")
+    }
+}
+
+func restore(_ arguments: [String]) {
+    guard let name = arguments.first else {
         print("usage: trash restore <name> [destination-dir]\n")
-        cmdList()
+        list()
         exit(1)
     }
-    let matches = entries().filter { $0.name == name }
-    switch matches.count {
-    case 0:
-        let near = entries().filter { $0.name.localizedCaseInsensitiveContains(name) }.prefix(5)
-        var msg = "not in Trash: \(name)"
-        if !near.isEmpty {
-            msg += "\ndid you mean: " + near.map { $0.name }.joined(separator: ", ")
-        }
-        die(msg)
-    case 1:
-        break
-    default:
-        warn("\(matches.count) items named '\(name)' in Trash:")
-        for m in matches {
-            let d = m.added.map { dateFmt.string(from: $0) } ?? "?"
-            warn("  \(d)  \(m.origin.map(tilde) ?? "(origin unknown)")")
-        }
-        die("ambiguous: restore via Finder, or empty the duplicates first")
-    }
-    let entry = matches[0]
-
-    let target: URL
-    if args.count > 1 {
-        let destDir = URL(fileURLWithPath: args[1]).standardizedFileURL
-        var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: destDir.path, isDirectory: &isDir), isDir.boolValue else {
-            die("destination is not a directory: \(args[1])")
-        }
-        target = destDir.appendingPathComponent(entry.name)
-    } else if let origin = entry.origin {
-        target = URL(fileURLWithPath: origin)
-        var isDir: ObjCBool = false
-        guard
-            fm.fileExists(atPath: target.deletingLastPathComponent().path, isDirectory: &isDir),
-            isDir.boolValue
-        else {
-            die(
-                "original directory no longer exists: \(tilde(target.deletingLastPathComponent().path))\n"
-                    + "pass a destination: trash restore '\(name)' <dir>")
-        }
-    } else {
-        die(
-            "no origin recorded for '\(name)' (trashed outside this tool)\n"
-                + "pass a destination: trash restore '\(name)' <dir>")
-    }
-
-    if (try? fm.attributesOfItem(atPath: target.path)) != nil {
-        die("refusing to overwrite: \(tilde(target.path))")
-    }
-    do {
-        try fm.moveItem(at: entry.url, to: target)
-        _ = removexattr(target.path, originXattr, XATTR_NOFOLLOW)
-        print("restored: \(tilde(target.path))")
-    } catch {
-        die("restore failed: \(error.localizedDescription)")
+    let (reply, runner) = perform(.restore(name: name, into: arguments.dropFirst().first))
+    switch reply {
+    case .restored(let path): print("restored: \(tilde(path))")
+    case .failed(let error): fail(explain(error, runner))
+    default: fail("trash.app answered a restore with something else")
     }
 }
 
-@MainActor func cmdEmpty(_ args: [String]) {
-    let force = args.contains("-f") || args.contains("--force")
-    let all = entries()
-    let ghostCount = phantoms().count
-    guard !all.isEmpty || ghostCount > 0 else {
+func empty(_ arguments: [String]) {
+    let (contents, _) = listing()
+    guard !contents.isEmpty else {
         print("Trash is empty")
         return
     }
-    if !force {
-        var what = [String]()
-        if !all.isEmpty { what.append(plural(all.count, "item")) }
-        if ghostCount > 0 {
+    if !(arguments.contains("-f") || arguments.contains("--force")) {
+        var what: [String] = []
+        if !contents.items.isEmpty { what.append(plural(contents.items.count, "item")) }
+        if !contents.hidden.isEmpty {
             what.append(
-                "\(plural(ghostCount, "hidden \"._\" metadata file")) Finder cannot see")
+                "\(plural(contents.hidden.count, "hidden \"._\" metadata file")) Finder cannot see")
         }
         print(
             "Empty the Trash? \(what.joined(separator: " + ")) will be PERMANENTLY deleted. [y/N] ",
             terminator: "")
-        guard let a = readLine(), a.lowercased() == "y" else {
+        guard readLine()?.lowercased() == "y" else {
             print("Cancelled")
             exit(1)
         }
     }
-    var failed = false
-    for e in all {
-        do {
-            try fm.removeItem(at: e.url)
-        } catch {
-            warn("\(e.name): \(error.localizedDescription)")
-            failed = true
-        }
+    let (reply, runner) = perform(.empty)
+    switch reply {
+    case .emptied(let emptied):
+        emptied.failed.forEach(warn)
+        var did: [String] = []
+        if emptied.items > 0 { did.append(plural(emptied.items, "item")) }
+        if emptied.hidden > 0 { did.append(plural(emptied.hidden, "hidden metadata file")) }
+        print("Trash emptied (\(did.isEmpty ? "nothing" : did.joined(separator: " + ")))")
+        if !emptied.failed.isEmpty { exit(1) }
+    case .failed(let error): fail(explain(error, runner))
+    default: fail("trash.app answered an empty with something else")
     }
-    // Phantom sweep AFTER the visible pass and RE-SCANNED: removing "x" may
-    // take its coalesced "._x" along, so the prompt's count is a ceiling.
-    var ghostsRemoved = 0
-    for g in phantoms() {
-        let p = trashDir().appendingPathComponent(g.name).path
-        let ok = g.isDir ? (try? fm.removeItem(atPath: p)) != nil : unlink(p) == 0
-        if ok {
-            ghostsRemoved += 1
-        } else {
-            warn("\(g.name): cannot remove")
-            failed = true
-        }
-    }
-    if failed { exit(1) }
-    var did = [String]()
-    if !all.isEmpty { did.append(plural(all.count, "item")) }
-    if ghostsRemoved > 0 { did.append(plural(ghostsRemoved, "hidden metadata file")) }
-    print("Trash emptied (\(did.joined(separator: " + ")))")
 }
 
 func help() {
@@ -329,32 +208,31 @@ func help() {
         them with an explicit destination, or with Finder's own Put Back.
         Finder cannot see AppleDouble "._" files in the Trash (an emptied-looking
         Trash can still hold thousands); list reports them, empty removes them.
+        Reading the Trash needs Full Disk Access: where the terminal lacks it,
+        trash.app (the cask) reads it with its own.
         """)
 }
 
 // MARK: - dispatch
 
-let args = Array(CommandLine.arguments.dropFirst())
+let arguments = Array(CommandLine.arguments.dropFirst())
 
-if args.isEmpty {
+if arguments.first == AsApp.serve { AsApp.answerAndExit(Array(arguments.dropFirst())) }
+// Opened as an app (Finder, Spotlight: no arguments, launched by launchd):
+// show where it gets Full Disk Access.
+if arguments.isEmpty && getppid() == 1 && AsApp.bundle != nil { AsApp.setUp() }
+if arguments.isEmpty {
     help()
     exit(2)
 }
-switch args[0] {
-case "help", "--help", "-h":
-    help()
-case "list", "ls":
-    cmdList()
-case "restore":
-    cmdRestore(Array(args.dropFirst()))
-case "empty":
-    cmdEmpty(Array(args.dropFirst()))
-case "--":
-    cmdTrash(Array(args.dropFirst()))
-case "-v":
-    // /usr/bin/trash compat; breadcrumbs print regardless
-    cmdTrash(Array(args.dropFirst()))
+switch arguments[0] {
+case "help", "--help", "-h": help()
+case "list", "ls": list()
+case "restore": restore(Array(arguments.dropFirst()))
+case "empty": empty(Array(arguments.dropFirst()))
+// /usr/bin/trash compat: -v; breadcrumbs print regardless
+case "--", "-v": put(Array(arguments.dropFirst()))
 default:
-    if args[0].hasPrefix("-") { die("unknown option: \(args[0]) (see `trash help`)") }
-    cmdTrash(args)
+    if arguments[0].hasPrefix("-") { fail("unknown option: \(arguments[0]) (see `trash help`)") }
+    put(arguments)
 }

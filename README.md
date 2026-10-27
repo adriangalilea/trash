@@ -43,10 +43,39 @@ confirmation states both counts. Check yours: `ls -A ~/.Trash` next to an
 ## Install
 
 ```sh
-mise run install     # builds and installs to ~/.local/bin/trash
+brew install --cask adriangalilea/tap/trash
 ```
 
-Or without mise: `swift build -c release && install -m 755 .build/release/trash ~/.local/bin/`
+That installs `trash.app` and links the `trash` command from inside it.
+Installed as the old Homebrew formula? `brew uninstall trash` first.
+
+## Reading the Trash needs Full Disk Access
+
+Moving things into the Trash works from anywhere. Reading it (`list`,
+`restore`, `empty`) doesn't: macOS lets only a process with Full Disk Access
+read `~/.Trash`, grants it to the app a command runs in (your terminal), never
+to the command, and never asks. Without it, `trash list` says so and exits 1;
+it never shows an unreadable Trash as empty.
+
+So `trash` reads the Trash itself first, and only when macOS refuses does it
+run the same operation again as `trash.app`: opened through LaunchServices,
+the app is its own app to macOS and holds its own grant, does the one
+operation, hands back the answer and exits. No background process, and one
+implementation either way. Give it the grant once: open `trash.app`, which
+opens System Settings at Full Disk Access and shows itself in Finder to drag
+into the list. A terminal that already has Full Disk Access never involves it.
+
+## From source
+
+```sh
+swift build -c release   # .build/release/trash: the plain command
+```
+
+The plain command works wherever your terminal may read the Trash. The app
+needs a stable signature, because macOS ties its grant to it (an unsigned
+build's grant is lost at the next rebuild): with a certificate of your own,
+`SIGN_ID=<identity> mise run install` builds `trash.app` into
+`~/Applications` and links `trash` into `~/.local/bin`.
 
 ## Semantics worth knowing
 
@@ -65,4 +94,6 @@ Or without mise: `swift build -c release && install -m 755 .build/release/trash 
 
 ## Requirements
 
-macOS 13+. Built with SwiftPM; no dependencies.
+macOS 13+. Built with SwiftPM; no dependencies. `TrashKit` is everything
+done to the Trash (no printing, no exits); the `trash` target is the command's
+words and the run-as-app hop (`Sources/trash/AsApp.swift`).
