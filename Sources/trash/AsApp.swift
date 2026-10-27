@@ -70,10 +70,16 @@ enum AsApp {
             .appending(path: "trash-reply-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: reply) }
         let json = String(decoding: try! JSONEncoder().encode(request), as: UTF8.self)
-        let status = open(["-W", "-n", "-g", "-j", app.path, "--args", serve, json, reply.path])
+        // open's own words are kept, not shown: trash.app often finishes before
+        // `open -W` starts waiting on it, which open reports ("Unable to block
+        // on application") while the answer is already written. They matter
+        // only when no answer came.
+        let (status, said) = open(
+            ["-W", "-n", "-g", "-j", app.path, "--args", serve, json, reply.path])
         guard let data = try? Data(contentsOf: reply) else {
             fail(
-                "trash.app (\(app.path)) gave no answer (open exited \(status));"
+                "trash.app (\(app.path)) gave no answer (open exited \(status)"
+                    + (said.isEmpty ? "" : ": \(said)") + ");"
                     + " its log: /usr/bin/log show --last 5m --predicate 'process == \"trash\"'")
         }
         guard let decoded = try? JSONDecoder().decode(Reply.self, from: data) else {
@@ -104,16 +110,24 @@ enum AsApp {
         exit(0)
     }
 
-    private static func open(_ arguments: [String]) -> Int32 {
+    /// /usr/bin/open, its exit status and what it said on stderr.
+    @discardableResult
+    private static func open(_ arguments: [String]) -> (Int32, String) {
         let process = Process()
         process.executableURL = URL(filePath: "/usr/bin/open")
         process.arguments = arguments
+        let stderr = Pipe()
+        process.standardError = stderr
         do {
             try process.run()
         } catch {
             fail("cannot run /usr/bin/open: \(error.localizedDescription)")
         }
+        let said = stderr.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        return process.terminationStatus
+        return (
+            process.terminationStatus,
+            String(decoding: said, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        )
     }
 }
