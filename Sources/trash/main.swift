@@ -49,13 +49,31 @@ struct Entry {
     let origin: String?
 }
 
+// The Trash could not be read: said, never shown as an empty Trash. macOS
+// refuses ~/.Trash to a process without Full Disk Access and never asks for
+// it, so a terminal (or a terminal's pane daemon) without the grant gets
+// "Operation not permitted" while trashing still works.
+@MainActor func unreadable(_ errno: Int32) -> Never {
+    var msg = "cannot read the Trash (\(tilde(trashDir().path))): \(String(cString: strerror(errno)))"
+    if errno == EPERM {
+        msg += "\nmacOS lets only a process with Full Disk Access read it, and never asks:"
+            + " give it to the app this runs in (System Settings › Privacy & Security › Full Disk Access)"
+    }
+    die(msg)
+}
+
 // Home-volume Trash only; items trashed on other volumes land in that
 // volume's .Trashes and are Finder's business.
 @MainActor func entries() -> [Entry] {
-    let urls =
-        (try? fm.contentsOfDirectory(
-            at: trashDir(), includingPropertiesForKeys: [.addedToDirectoryDateKey], options: []
-        )) ?? []
+    let urls: [URL]
+    do {
+        urls = try fm.contentsOfDirectory(
+            at: trashDir(), includingPropertiesForKeys: [.addedToDirectoryDateKey], options: [])
+    } catch {
+        // Foundation's error wraps the POSIX one (257 over EPERM).
+        let posix = (error as NSError).userInfo[NSUnderlyingErrorKey] as? NSError
+        unreadable(Int32(posix?.code ?? Int(EPERM)))
+    }
     return
         urls
         .filter { $0.lastPathComponent != ".DS_Store" }
@@ -77,7 +95,7 @@ struct Entry {
 // out Empty Trash, while the bytes stay on disk. Only the BSD layer tells
 // the truth, so phantom = on disk per readdir, invisible per Foundation.
 @MainActor func rawNames() -> [(name: String, isDir: Bool)] {
-    guard let d = opendir(trashDir().path) else { return [] }
+    guard let d = opendir(trashDir().path) else { unreadable(errno) }
     defer { closedir(d) }
     var out: [(String, Bool)] = []
     while let e = readdir(d) {
@@ -91,7 +109,7 @@ struct Entry {
 }
 
 @MainActor func phantoms() -> [(name: String, isDir: Bool)] {
-    var visible = Set((try? fm.contentsOfDirectory(atPath: trashDir().path)) ?? [])
+    var visible = Set(entries().map(\.name))
     visible.insert(".DS_Store")  // real, but Finder-owned - not a phantom
     return rawNames().filter { !visible.contains($0.name) }
 }
