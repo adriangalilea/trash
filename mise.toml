@@ -66,9 +66,9 @@ description = "trash.app, unsigned, in $DIST"
 depends = ["build", "icon"]
 run = "scripts/assemble.sh $DIST/trash.app"
 
-# What a signed install on one's own Macs takes (hq ship): this bundle, with
-# the command linked onto PATH. Installed that way it is never quarantined,
-# so no launch can wait on a Gatekeeper prompt. People get the cask.
+# What a signed install on one's own Macs takes: this bundle, with the
+# command linked onto PATH. Installed that way it is never quarantined, so no
+# launch can wait on a Gatekeeper prompt. People get the cask.
 [_.ship.trash]
 task = "bundle"
 app = "dist/trash.app"

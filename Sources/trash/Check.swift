@@ -28,7 +28,7 @@ func check(json: Bool) {
     if quarantined, let app {
         problems.append(
             "\(tilde(app.path)) is quarantined: a launch can wait on a Gatekeeper prompt only a person answers."
-                + " install it with no quarantine (hq ship install trash), or: xattr -d com.apple.quarantine \(app.path)"
+                + " open it once at the screen, or clear the quarantine: xattr -d com.apple.quarantine \(app.path)"
         )
     }
     let reading: String
