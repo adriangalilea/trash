@@ -38,9 +38,9 @@ an old stamp.
 **Would change it:** macOS recording every item reliably (`prove.sh` would
 say CHANGED), or a way to make the stamp travel correctly through Finder.
 
-**Code:** C is branch `put-back-fast`. A, macOS's record alone, is the first
-four commits of branch `native-put-back` (51b6e07..bdf5e8c, with 75b9d42 the
-reader).
+**Code:** C is what trash ships (ce3af1b). A, macOS's record alone, is the
+tag `native-put-back` (51b6e07..bdf5e8c, with 75b9d42 the reader):
+`git show native-put-back`, `git switch --detach native-put-back` to build it.
 
 ## 2. One process for every path, or one per path
 
@@ -53,17 +53,15 @@ paths 6.7 s. `/usr/bin/trash` moves 10 in 0.06 s. It recorded most items,
 not all: 1 to 5% lost (decision 1). Waiting 2.5 s between items in one
 process records all three in `prove.sh` (`api-two5`), at 2.5 s an item.
 
-**Chosen: one process, speed.** Adrian's call, 2026-11-24: "default I choose
-speed." trash's own restore is exact either way (decision 1). What it costs:
+**Chosen: one process, speed.** trash's own restore is exact either way (decision 1). What it costs:
 Finder's own Put Back works only for the first item of a multi-path
 `trash` run, as with Apple's `/usr/bin/trash`.
 
 **Would change it:** wanting Finder's Put Back for what trash moves badly
 enough to pay 67 ms a path for 95 to 99% of items, or macOS fixing the bug.
 
-**Code:** one process per path is commit 5a8400c on branch
-`native-put-back`, kept as it was. Branch `put-back-fast` reverts it
-(1bcaf84, whose message says why).
+**Code:** one process per path is commit 5a8400c, in the tag
+`native-put-back`. trash reverts it (1bcaf84, whose message says why).
 
 ## 3. Writing `.DS_Store` ourselves
 
