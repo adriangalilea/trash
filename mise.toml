@@ -76,6 +76,7 @@ id = "garden.untitled.trash"
 version = "VERSION"
 sign = []
 on = ["household"]
+check = ["Contents/MacOS/trash", "--version", "{version}"]
 
 [_.ship.trash.links]
 "bin/trash" = "Contents/MacOS/trash"
