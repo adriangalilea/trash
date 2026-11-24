@@ -56,12 +56,13 @@ Three things about it are worth knowing:
   got no record of its own.
 
 So `trash` keeps its own record too: every item it moves is stamped with its
-original path, an xattr on the item itself
+original path and the time, an xattr on the item itself
 (`com.adriangalilea.trash.origin`) that no other process can erase. An item
 with either record goes back where it says. Where both exist and name
-different places (Finder's Put Back carries the stamp out with the item, so
-an item later trashed again by Finder can hold an old one), `list` shows
-both and `restore` asks for a destination rather than pick one.
+different places, the stamp written when the item arrived wins: macOS's
+record can be a stale one of an earlier item of the same name. A stamp from
+an earlier move (Finder's Put Back carries it out with the item, and
+something else trashed it again) is set aside for macOS's record.
 
 ## It empties what Finder can't
 
@@ -136,7 +137,7 @@ build's grant is lost at the next rebuild): with a certificate of your own,
   is always said) and `-s`/`--stopOnError`.
 - `--restore` puts an item back where its records say. It never
   overwrites and creates no folder: if the original directory is gone, the
-  item has no record, or the records disagree, it says so and takes a
+  item has no record, or an old stamp and the record disagree, it says so and takes a
   destination directory instead. It leaves `.DS_Store` as it is.
 - Duplicate names don't happen: macOS renames on collision inside the Trash
   (`dup.txt` then `dup.txt 14-27-01-327.txt`), and each item restores to its

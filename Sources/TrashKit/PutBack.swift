@@ -105,24 +105,40 @@ enum PutBack {
 /// Nothing else can erase it, unlike macOS's Put Back record, which macOS
 /// loses for some items (proofs/put-back/DECISIONS.md). Finder does not read
 /// it, and its Put Back carries it out with the item.
+///
+/// The value is `<seconds since 1970>\t<path>`: when the stamp was written
+/// says which move it records, because the stamp travels with the item and
+/// a later move by Finder or another tool leaves the old one on it. trash
+/// 1.x wrote the path alone, with no time.
 enum Stamp {
     static let xattr = "com.adriangalilea.trash.origin"
 
-    /// Stamps the item at `path` with `origin`; the errno when it could not.
+    /// Stamps the item at `path` with `origin`, now; the errno when it could
+    /// not.
     static func write(_ origin: String, on path: String) -> Int32? {
-        let written = origin.withCString {
+        let value = "\(Date().timeIntervalSince1970)\t\(origin)"
+        let written = value.withCString {
             setxattr(path, xattr, $0, strlen($0), 0, XATTR_NOFOLLOW)
         }
         return written == 0 ? nil : errno
     }
 
-    static func origin(of path: String) -> String? {
+    /// The stamp on the item at `path`: where it came from, and when the
+    /// stamp was written (nil for trash 1.x's).
+    static func read(_ path: String) -> (origin: String, at: Date?)? {
         let size = getxattr(path, xattr, nil, 0, 0, XATTR_NOFOLLOW)
         guard size > 0 else { return nil }
         var bytes = [UInt8](repeating: 0, count: size)
         let read = getxattr(path, xattr, &bytes, size, 0, XATTR_NOFOLLOW)
-        guard read > 0 else { return nil }
-        return String(bytes: bytes[..<read], encoding: .utf8)
+        guard read > 0, let value = String(bytes: bytes[..<read], encoding: .utf8) else {
+            return nil
+        }
+        let fields = value.split(separator: "\t", maxSplits: 1)
+        if fields.count == 2, let seconds = Double(fields[0]) {
+            return (String(fields[1]), Date(timeIntervalSince1970: seconds))
+        }
+        precondition(value.hasPrefix("/"), "a stamp is <time>\\t<path> or a path: '\(value)'")
+        return (value, nil)
     }
 
     /// Takes the xattr off an item put back, so it never outlives the Trash.

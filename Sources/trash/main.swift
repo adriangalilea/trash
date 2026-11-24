@@ -257,7 +257,7 @@ enum Verb: TerminalProgram.Commands {
                 "restore", args: [Verb.name, Verb.into],
                 says: "put an item back where it came from, or into dir",
                 more: """
-                    It goes back where its records say: trash's own stamp for what trash moved, macOS's Put Back record (the one Finder's Put Back uses) for what Finder or another tool moved. An item with neither, or whose two records disagree, needs dir. Nothing is ever overwritten.
+                    It goes back where its records say: trash's own stamp for what trash moved, macOS's Put Back record (the one Finder's Put Back uses) for what Finder or another tool moved. When the two disagree, the stamp written at the item's arrival wins (macOS's record can be a stale one of an earlier item of the same name); an item with neither, or with an older stamp that disagrees, needs dir. Nothing is ever overwritten.
                     """,
                 examples: ["trash --restore notes.txt", "trash --restore photo.jpg ~/Desktop"])
         case .empty:

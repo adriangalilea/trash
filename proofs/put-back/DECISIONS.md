@@ -29,11 +29,26 @@ is on the item, and no other process writes it.
 
 **Chosen: C.** A alone would leave 1 to 5% of what trash moves with no
 origin, worse than trash 1.x. B alone would know nothing of what Finder and
-other tools trashed. With C, an item with either record goes back where it
-says; when both exist and name different places, trash shows both and
-asks for a destination. They can disagree because Finder's Put Back carries
-the stamp out with the item, so an item Finder trashes again later can hold
-an old stamp.
+other tools trashed.
+
+Which record wins, when both exist and name different places, is decided by
+when the stamp was written. Either can be stale: macOS never removes a
+record, so an item macOS gave no record (every item after the first of a
+run) matches an old record of an earlier item of the same name; and the
+stamp travels with the item, so an item Finder put back and something else
+trashed again holds the stamp of the earlier move. The stamp holds the time
+it was written, and the Trash holds when each item arrived: a stamp written
+within a minute after the arrival records this move and wins; an older one
+is set aside and macOS's record is used. A stamp with no time (trash 1.x)
+that disagrees is shown beside the record and never guessed between.
+
+*Corrected the same day.* The first version showed every disagreement and
+asked for a destination. In real use that left trash unable to put back its
+own items whenever their name had been trashed before (`notes.txt`, `tree`:
+a stale record of an earlier item against the right stamp), which is
+common. Fixed by recording when the stamp was written; the three cases (this
+move against a stale record, a stale stamp against a fresh record, a 1.x
+stamp) were proven on a clean Trash.
 
 **Would change it:** macOS recording every item reliably (`prove.sh` would
 say CHANGED), or a way to make the stamp travel correctly through Finder.

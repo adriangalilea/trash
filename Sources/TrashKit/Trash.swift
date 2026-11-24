@@ -21,25 +21,46 @@ public struct Item: Codable, Sendable {
     public let putBack: String?
     /// Where trash's own stamp says it came from (items trash moved).
     public let stamp: String?
+    /// When that stamp was written; nil for trash 1.x's, which said only where.
+    public let stamped: Date?
 
-    /// Where it came from, out of what is recorded.
+    /// The stamp records this item's arrival in the Trash: written right
+    /// after the move, so within a minute of the date macOS gives the item
+    /// (whole seconds) when it arrived. A stamp from an earlier move (the
+    /// item put back by Finder, then trashed again by something else) is not.
+    var stampIsThisMove: Bool {
+        guard let stamped, let added else { return false }
+        let after = stamped.timeIntervalSince(added)
+        return after > -1 && after < 60
+    }
+
+    /// Where it came from, out of what is recorded. A stamp of this move is
+    /// the truth: macOS's record may be a stale one of an earlier item of the
+    /// same name, since macOS records only the first item a process moves and
+    /// never removes a record. A stamp of an earlier move is set aside. A
+    /// stamp with no time (trash 1.x) and a record that disagree are both
+    /// shown, never guessed between.
     public var origin: Origin {
+        if stampIsThisMove, let stamp { return .known(stamp) }
+        let stamp = stamped == nil ? stamp : nil
         switch (putBack, stamp) {
         case (let native?, let old?):
-            samePlace(native, old) ? .known(native) : .disputed(putBack: native, stamp: old)
-        case (let native?, nil): .known(native)
-        case (nil, let old?): .known(old)
-        case (nil, nil): .unknown
+            return samePlace(native, old)
+                ? .known(native) : .disputed(putBack: native, stamp: old)
+        case (let native?, nil): return .known(native)
+        case (nil, let old?): return .known(old)
+        case (nil, nil): return .unknown
         }
     }
 
-    enum CodingKeys: String, CodingKey { case name, added, origin, putBack, stamp }
+    enum CodingKeys: String, CodingKey { case name, added, origin, putBack, stamp, stamped }
 
-    public init(name: String, added: Date?, putBack: String?, stamp: String?) {
+    public init(name: String, added: Date?, putBack: String?, stamp: String?, stamped: Date?) {
         self.name = name
         self.added = added
         self.putBack = putBack
         self.stamp = stamp
+        self.stamped = stamped
     }
 
     public init(from decoder: any Decoder) throws {
@@ -48,6 +69,7 @@ public struct Item: Codable, Sendable {
         added = try fields.decodeIfPresent(Date.self, forKey: .added)
         putBack = try fields.decodeIfPresent(String.self, forKey: .putBack)
         stamp = try fields.decodeIfPresent(String.self, forKey: .stamp)
+        stamped = try fields.decodeIfPresent(Date.self, forKey: .stamped)
     }
 
     /// `origin` is the path restore puts it back to, null when unknown or
@@ -63,6 +85,7 @@ public struct Item: Codable, Sendable {
         }
         try fields.encode(putBack, forKey: .putBack)
         try fields.encode(stamp, forKey: .stamp)
+        try fields.encode(stamped, forKey: .stamped)
     }
 }
 
@@ -264,12 +287,13 @@ public struct Trash: Sendable {
         return
             shown
             .map {
-                Item(
+                let stamp = Stamp.read($0.path)
+                return Item(
                     name: $0.lastPathComponent,
                     added: (try? $0.resourceValues(forKeys: [.addedToDirectoryDateKey]))?
                         .addedToDirectoryDate,
                     putBack: putBack[$0.lastPathComponent],
-                    stamp: Stamp.origin(of: $0.path))
+                    stamp: stamp?.origin, stamped: stamp?.at)
             }
             .sorted { ($0.added ?? .distantPast) > ($1.added ?? .distantPast) }
     }
