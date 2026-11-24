@@ -233,7 +233,8 @@ if arguments.isEmpty {
 switch arguments[0] {
 case "help", "--help", "-h": help()
 case "--version":
-    guard let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+    guard let app = AsApp.bundle,
+        let version = Bundle(url: app)?.infoDictionary?["CFBundleShortVersionString"] as? String
     else { fail("no version: this build is not inside trash.app") }
     if let expected = arguments.dropFirst().first, expected != version {
         fail("version \(version), expected \(expected)")
