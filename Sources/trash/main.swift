@@ -94,15 +94,12 @@ func explain(_ error: TrashError, _ runner: Runner) -> String {
 
 // MARK: - commands
 
-/// The first path moves here, each after it in a child process of its own:
-/// macOS records Put Back only for the first item a process trashes.
 func put(_ paths: [String], stopOnError: Bool) {
     var failed = false
-    for (index, path) in paths.enumerated() {
+    for path in paths {
         if failed && stopOnError { exit(1) }
-        let reply = index == 0 ? answer(.put(path)) : Child.run(.put(path))
-        switch reply {
-        case .trashed(let trashed):
+        do throws(TrashError) {
+            let trashed = try Trash().put(path)
             // The undo breadcrumb on STDERR: stdout stays empty exactly like
             // /usr/bin/trash, so pipes never see a difference, while terminals
             // and transcripts keep the log. A collision rename is said, or
@@ -110,10 +107,9 @@ func put(_ paths: [String], stopOnError: Bool) {
             note(
                 "trashed: \(tilde(trashed.origin))"
                     + (trashed.renamed.map { " (in Trash as '\($0)')" } ?? ""))
-        case .failed(let error):
+        } catch {
             warn(explain(error, .here))
             failed = true
-        default: fail("trash's child answered a put with something else")
         }
     }
     if failed { exit(1) }
@@ -235,9 +231,9 @@ enum Verb: TerminalProgram.Commands {
         case .put:
             .init(
                 "put", args: [Verb.paths], flags: [Verb.verbose, Verb.stopOnError],
-                says: "move files and folders to the Trash, each with macOS's Put Back record",
+                says: "move files and folders to the Trash, recording where each came from",
                 more: """
-                    `trash <paths>` is this command: the same call as /usr/bin/trash, with nothing on stdout and exit 0 when every path moved. macOS records where an item came from (what Finder's Put Back and `trash restore` read) only for the first item a process trashes, so each path after one moves in a process of its own. Each move is said on stderr (`trashed: <path>`, and the name it took in the Trash when one there had it), the undo's breadcrumb. A path that cannot be trashed is said and the others still go, unless --stop-on-error; any failure exits 1. A file named like a command goes by its path or after `--`: `trash ./list`, `trash -- list`.
+                    `trash <paths>` is this command: the same call as /usr/bin/trash, with nothing on stdout and exit 0 when every path moved. Each move is said on stderr (`trashed: <path>`, and the name it took in the Trash when one there had it), the undo's breadcrumb. A path that cannot be trashed is said and the others still go, unless --stop-on-error; any failure exits 1. A file named like a command goes by its path or after `--`: `trash ./list`, `trash -- list`.
                     """,
                 examples: ["trash notes.txt build/", "trash -s a b c"],
                 risk: .covered)

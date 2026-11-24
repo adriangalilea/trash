@@ -13,16 +13,12 @@ import IOKit
 import TrashKit
 
 enum Request: Codable {
-    /// Answered here or by a Child, never by trash.app: moving needs no
-    /// grant, only a process that has trashed nothing yet.
-    case put(String)
     case list
     case restore(name: String, into: String?)
     case empty
 }
 
 enum Reply: Codable {
-    case trashed(Trashed)
     case listing(Listing)
     case restored(String)
     case emptied(Emptied)
@@ -39,7 +35,6 @@ func answer(_ request: Request) -> Reply {
     let trash = Trash()
     do throws(TrashError) {
         switch request {
-        case .put(let path): return .trashed(try trash.put(path))
         case .list: return .listing(try trash.list())
         case .restore(let name, let into): return .restored(try trash.restore(name, into: into))
         case .empty: return .emptied(try trash.empty())
@@ -187,42 +182,6 @@ enum AsApp {
             process.terminationStatus,
             String(decoding: said, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         )
-    }
-}
-
-/// This binary run again as a plain child process, for one request: how each
-/// path after the first of a `trash a b c` gets a process of its own, since macOS records Put
-/// Back only for the first item a process trashes. Same `--serve` side as
-/// trash.app's, without LaunchServices.
-enum Child {
-    static func run(_ request: Request) -> Reply {
-        guard let executable = Bundle.main.executableURL else {
-            fail("cannot tell where this trash binary is, to run it once per path")
-        }
-        let reply = FileManager.default.temporaryDirectory
-            .appending(path: "trash-reply-\(UUID().uuidString).json")
-        defer {
-            try? FileManager.default.removeItem(at: reply)
-            try? FileManager.default.removeItem(at: AsApp.startedMark(reply.path))
-        }
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = [
-            AsApp.serve, String(decoding: try! JSONEncoder().encode(request), as: UTF8.self),
-            reply.path,
-        ]
-        do {
-            try process.run()
-        } catch {
-            fail("cannot run \(executable.path) for one path: \(error.localizedDescription)")
-        }
-        process.waitUntilExit()
-        guard let data = try? Data(contentsOf: reply),
-            let decoded = try? JSONDecoder().decode(Reply.self, from: data)
-        else {
-            fail("trash's child for one path exited \(process.terminationStatus) with no answer")
-        }
-        return decoded
     }
 }
 

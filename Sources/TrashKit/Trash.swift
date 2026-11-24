@@ -141,10 +141,7 @@ public struct Trash: Sendable {
             ?? FileManager.default.homeDirectoryForCurrentUser.appending(path: ".Trash")
     }
 
-    /// Moves `path` to the Trash; macOS records where it came from. Only the
-    /// first move a process makes is recorded (a macOS bug), so a process
-    /// calls this once: the command moves each further path in a process of
-    /// its own.
+    /// Moves `path` to the Trash and records where it came from.
     public func put(_ path: String) throws(TrashError) -> Trashed {
         let url = URL(fileURLWithPath: path)
         // lstat, so a dangling symlink is still trashable.
