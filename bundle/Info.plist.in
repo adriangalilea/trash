@@ -9,7 +9,7 @@
 	<key>CFBundleIconName</key>
 	<string>trash</string>
 	<key>CFBundleIdentifier</key>
-	<string>garden.untitled.trash</string>
+	<string>__BUNDLE_ID__</string>
 	<key>CFBundleName</key>
 	<string>trash</string>
 	<key>CFBundlePackageType</key>
@@ -19,7 +19,7 @@
 	<key>CFBundleVersion</key>
 	<string>__VERSION__</string>
 	<key>LSMinimumSystemVersion</key>
-	<string>26.0</string>
+	<string>27.0</string>
 	<key>LSUIElement</key>
 	<true/>
 </dict>

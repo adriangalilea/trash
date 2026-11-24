@@ -1,14 +1,14 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 import PackageDescription
 
 let package = Package(
     name: "trash",
-    platforms: [.macOS(.v26)],
+    platforms: [.macOS(.v27)],
     dependencies: [
         // PermissionGrants: trash.app's Full Disk Access, read live and asked
         // for the studio's way.
         .package(
-            url: "https://github.com/adriangalilea/swift-utils", .upToNextMinor(from: "0.38.13"))
+            url: "https://github.com/adriangalilea/swift-utils", .upToNextMinor(from: "0.107.3"))
     ],
     targets: [
         // Everything trash does to the Trash; no printing, no exits.
