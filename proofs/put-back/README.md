@@ -116,18 +116,17 @@ Automation permission); or tell people to drag items back by hand.
 
 ## What trash does about it
 
-Planned for trash 2.0, not in a release yet: trash 1.x moves every path
-given in one process and records the origin only in its own extended
-attribute (`com.adriangalilea.trash.origin`), which Finder does not read.
+Since trash 2.0 (why each choice: DECISIONS.md):
 
-- **Moving:** every item in a process of its own, so macOS's record is
-  written for each, without waiting between items and without Finder. Whether
-  that holds with Finder's Trash window open is what the `open` run of this
-  proof answers.
-- **Reading:** `list` and `restore` read the records from `.DS_Store`, read
-  only, so they know the origin of what Finder and other tools trashed too,
-  and Finder's Put Back works on what trash trashed. A record for a name no
-  longer in the Trash is ignored, and a missing record is "not recorded",
-  never final, since Finder writes late.
+- **Moving:** every path in one process, fast, so macOS records only the
+  first item of a multi-path run, as for Apple's `/usr/bin/trash`. trash
+  stamps every item it moves with where it came from, an xattr on the item
+  (`com.adriangalilea.trash.origin`) that no other process can erase.
+- **Reading:** `--list` and `--restore` read both that stamp and macOS's
+  records in `.DS_Store`, read only, so they know the origin of what Finder
+  and other tools trashed too. A record for a name no longer in the Trash is
+  ignored; a missing record is "not recorded", never final, since Finder
+  writes late; two records naming different places are both shown and never
+  guessed between.
 - **Never writing `.DS_Store`:** Finder rewrites it while running, so writing
   it from outside could corrupt it.
