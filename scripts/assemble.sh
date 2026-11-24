@@ -1,7 +1,8 @@
 #!/bin/sh
 # trash.app, assembled by hand (no Xcode), for `mise run install` and the
 # release alike, so the app you run and the app you ship can never diverge.
-#   scripts/assemble.sh <destination.app>     (VERSION in the environment)
+#   scripts/assemble.sh <destination.app>     (VERSION in the environment;
+#   BUNDLE_ID too when it is to be someone other than garden.untitled.trash)
 # The bundle is the command itself (Contents/MacOS/trash) wearing an identity
 # macOS can grant Full Disk Access to: when a terminal may not read the Trash,
 # the command runs again as this app (Sources/trash/AsApp.swift).
@@ -15,4 +16,5 @@ ditto .build/release/trash "$dest/Contents/MacOS/trash"
 ditto Resources/trash.icns "$dest/Contents/Resources/trash.icns"
 # The glass icon (CFBundleIconName); the icns above is its flat fallback.
 ditto Resources/Assets.car "$dest/Contents/Resources/Assets.car"
-sed -e "s|__VERSION__|$VERSION|g" bundle/Info.plist.in > "$dest/Contents/Info.plist"
+sed -e "s|__VERSION__|$VERSION|g" -e "s|__BUNDLE_ID__|${BUNDLE_ID:-garden.untitled.trash}|g" \
+  bundle/Info.plist.in > "$dest/Contents/Info.plist"
