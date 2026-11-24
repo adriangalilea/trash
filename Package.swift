@@ -8,7 +8,7 @@ let package = Package(
         // PermissionGrants: trash.app's Full Disk Access, read live and asked
         // for the studio's way.
         .package(
-            url: "https://github.com/adriangalilea/swift-utils", .upToNextMinor(from: "0.108.0"))
+            url: "https://github.com/adriangalilea/swift-utils", .upToNextMinor(from: "0.109.0"))
     ],
     targets: [
         // Everything trash does to the Trash; no printing, no exits.

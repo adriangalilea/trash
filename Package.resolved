@@ -1,5 +1,5 @@
 {
-  "originHash" : "bf494109d2ab4bfa71547dd2b6a18cd1cfa3351744e5a51bf3eeae94e1e63c2a",
+  "originHash" : "e3788e71551ec34b0ab176e30c565e73517df478709e31d5f50f0d998dec1279",
   "pins" : [
     {
       "identity" : "highlightr",
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/adriangalilea/swift-utils",
       "state" : {
-        "revision" : "524fdbed2f14efdbd3a520c2f0f44b252c4a9bab",
-        "version" : "0.108.0"
+        "revision" : "2240efd4f32a1a21d7c832c45f5cab62d0fa0d68",
+        "version" : "0.109.0"
       }
     }
   ],

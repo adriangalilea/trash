@@ -240,8 +240,7 @@ enum Verb: TerminalProgram.Commands {
                 more: """
                     `trash <paths>` is this command: the same call as /usr/bin/trash, with nothing on stdout and exit 0 when every path moved. Each move is said on stderr (`trashed: <path>`, and the name it took in the Trash when one there had it), the undo's breadcrumb. A path that cannot be trashed is said and the others still go, unless --stop-on-error; any failure exits 1. Every word is a path, whatever it is named: `trash list` trashes the file list. A path starting with `-` goes after `--`: `trash -- -notes.txt`.
                     """,
-                examples: ["trash notes.txt build/", "trash -s a b c"],
-                risk: .covered)
+                examples: ["trash notes.txt build/", "trash -s a b c"])
         case .list:
             .init(
                 "list", args: [],
@@ -252,7 +251,7 @@ enum Verb: TerminalProgram.Commands {
                 examples: ["trash --list", "trash --ls --json"],
                 json:
                     "the items (name, added, origin: where restore puts it, putBack and stamp: what each record says) and the hidden \"._\" files",
-                aliases: ["ls"], risk: .read)
+                aliases: ["ls"])
         case .restore:
             .init(
                 "restore", args: [Verb.name, Verb.into],
@@ -260,24 +259,15 @@ enum Verb: TerminalProgram.Commands {
                 more: """
                     It goes back where its records say: trash's own stamp for what trash moved, macOS's Put Back record (the one Finder's Put Back uses) for what Finder or another tool moved. An item with neither, or whose two records disagree, needs dir. Nothing is ever overwritten.
                     """,
-                examples: ["trash --restore notes.txt", "trash --restore photo.jpg ~/Desktop"],
-                risk: .covered)
+                examples: ["trash --restore notes.txt", "trash --restore photo.jpg ~/Desktop"])
         case .empty:
             .init(
                 "empty", flags: [Verb.force],
                 says:
                     "delete everything in the Trash for good, the files Finder cannot see included",
                 more:
-                    "It asks first, and with nobody to answer it does nothing; --force does not ask.",
-                examples: ["trash --empty"],
-                risk: .init(
-                    .covered,
-                    when: [
-                        .flag(
-                            Verb.force, .machine,
-                            why: "it deletes the Trash for good with nobody asked",
-                            instead: "trash --empty")
-                    ]))
+                    "Nothing it deletes can be brought back. It asks first, saying how many items, and with nobody to answer it deletes nothing; --force does not ask.",
+                examples: ["trash --empty"])
         case .check:
             .init(
                 "check", says: "whether trash works on this Mac right now, with nobody needed",
@@ -285,8 +275,7 @@ enum Verb: TerminalProgram.Commands {
                     For a caller with nobody at the screen (a script, a daemon, ssh) to ask before relying on trash. It reads, never changes anything: whether trash.app is quarantined (a quarantined app's launch can wait on a Gatekeeper prompt only a person answers), whether this process or trash.app can read the Trash (list, restore and empty need it), and whether a person is at the unlocked screen. Exit 0: `trash <paths>` works and nothing waits on a person; 1: something would, each reason with its fix. A launch macOS holds never reaches trash's own code, so call it under a limit: `timeout 10 trash --check`.
                     """,
                 examples: ["timeout 10 trash --check", "trash --check --json"],
-                json: "ok, and each fact: quarantined, reading (here, trash.app or none), person",
-                risk: .read)
+                json: "ok, and each fact: quarantined, reading (here, trash.app or none), person")
         }
     }
 }
@@ -314,8 +303,7 @@ let program = TerminalProgram.Program<Verb>(
         never: [
             "rm a file someone may want back: trash it",
             "empty the Trash without the person's yes",
-        ]),
-    risks: .init())
+        ]))
 
 // MARK: - dispatch
 
