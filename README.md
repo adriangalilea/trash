@@ -23,9 +23,9 @@ No list, no restore, no empty. `trash-cli` has the commands but refuses the
 native `~/.Trash`, so your files vanish from Finder and Put Back breaks.
 
 This tool is both: it moves files with `FileManager.trashItem`, the same API
-Finder uses, and stamps each item with an xattr
-(`com.adriangalilea.trash.origin`) holding its original absolute path. That
-xattr is what `restore` reads to put a file back where it lived. Every trash
+Finder uses, stamps each item it moves with where it came from, and also
+reads macOS's own Put Back record, the one Finder's Put Back uses. So it
+restores what it trashed and what Finder or any other tool trashed. Every trash
 prints a `trashed: <origin>` breadcrumb to stderr, so your terminal doubles
 as an undo log while stdout stays byte-identical to `/usr/bin/trash` (empty):
 scripts and pipes never see a difference. When macOS renames on collision the
@@ -34,6 +34,34 @@ breadcrumb says so: `trashed: ~/a/dup.txt (in Trash as 'dup.txt 14-27-01.txt')`.
 It deliberately shadows `/usr/bin/trash` (install to a PATH dir that wins):
 the base case is identical by construction, and if the binary is ever
 missing, PATH falls through to Apple's and you lose only the extras.
+
+## Where Put Back lives
+
+macOS keeps it in `~/.Trash/.DS_Store`, a B-tree of records keyed by each
+item's name in the Trash: `ptbL` is the folder it left, `ptbN` the name it
+had there (so an item macOS renamed on a collision still goes back under its
+own name). `trash` reads that file by its structure and never writes it.
+Three things about it are worth knowing:
+
+- macOS writes the record only for the first item a process trashes, and
+  loses some even then. Apple's `/usr/bin/trash a b c` leaves `b` and `c`
+  without a Put Back, and so does `trash a b c`: Finder's Put Back works for
+  its first item only. A process per path would record most of the rest at
+  about 70 ms a path, and still lose 1 to 5%; `trash` stays fast instead
+  ([proofs/put-back](proofs/put-back/README.md), its DECISIONS.md).
+- Finder writes the file lazily, a minute or two after a move. An item
+  Finder trashed moments ago can show "origin unknown" until then.
+- Records are never removed when items leave the Trash. One whose name a
+  later item reuses can name the earlier item's folder, when the later one
+  got no record of its own.
+
+So `trash` keeps its own record too: every item it moves is stamped with its
+original path, an xattr on the item itself
+(`com.adriangalilea.trash.origin`) that no other process can erase. An item
+with either record goes back where it says. Where both exist and name
+different places (Finder's Put Back carries the stamp out with the item, so
+an item later trashed again by Finder can hold an old one), `list` shows
+both and `restore` asks for a destination rather than pick one.
 
 ## It empties what Finder can't
 
@@ -59,7 +87,7 @@ Homebrew quarantines what a cask downloads, and macOS shows a quarantined
 app's first launch a Gatekeeper prompt. Launched with nobody at the screen
 (over ssh, from a script), that launch waits for the prompt's answer before
 any of trash's own code runs. Open `trash.app` once, or run `trash` once at
-the screen, before relying on it unattended; `timeout 10 trash check` says
+the screen, before relying on it unattended; `timeout 10 trash --check` says
 whether anything would wait.
 
 ## Nothing waits on a person who is not there
@@ -106,13 +134,14 @@ build's grant is lost at the next rebuild): with a certificate of your own,
   one. A file whose name starts with `-` goes after `--`: `trash -- -x`.
 - `/usr/bin/trash`'s flags work the same: `-v`/`--verbose` (what was trashed
   is always said) and `-s`/`--stopOnError`.
-- `--restore` never overwrites, and screams if the original directory is gone
-  or the item was trashed by something else (no recorded origin): pass a
-  destination directory in those cases, or use Finder's Put Back.
+- `--restore` puts an item back where its records say. It never
+  overwrites and creates no folder: if the original directory is gone, the
+  item has no record, or the records disagree, it says so and takes a
+  destination directory instead. It leaves `.DS_Store` as it is.
 - Duplicate names don't happen: macOS renames on collision inside the Trash
   (`dup.txt` then `dup.txt 14-27-01-327.txt`), and each item restores to its
-  true origin regardless of the trash-side rename. If a duplicate somehow
-  appears anyway, `--restore` refuses rather than guesses.
+  true origin and name regardless of the trash-side rename. If a duplicate
+  somehow appears anyway, `--restore` refuses rather than guesses.
 - Home-volume Trash only. Items trashed on external volumes live in that
   volume's `.Trashes` and stay Finder's business.
 
@@ -121,5 +150,8 @@ build's grant is lost at the next rebuild): with a certificate of your own,
 macOS 27+. Built with SwiftPM; one dependency, swift-utils, for trash.app's
 grant (`PermissionGrants`) and the command's description, help and skill
 (`TerminalPrograms`). `TrashKit` is everything
-done to the Trash (no printing, no exits); the `trash` target is the command's
-words and the run-as-app hop (`Sources/trash/AsApp.swift`).
+done to the Trash (no printing, no exits), the `.DS_Store` reader included
+(`Sources/TrashKit/DSStore.swift`); the `trash` target is the command's
+words and the run-as-app hop (`Sources/trash/AsApp.swift`). `swift run putback` shows what is read for
+each item in your Trash, and `swift run putback NAME=/expected/path NAME=-`
+checks it against what you know.

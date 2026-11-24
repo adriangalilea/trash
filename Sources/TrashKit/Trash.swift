@@ -3,20 +3,91 @@
 // happened or throws why it didn't, so the command line and trash.app (the
 // same operations run with their own Full Disk Access) can never disagree.
 //
-// Moving into the Trash is FileManager.trashItem, the API Finder uses, plus an
-// xattr on the trashed item recording where it came from: that xattr is what
-// makes restore a real Put Back. Items trashed on other volumes land in that
-// volume's .Trashes and stay Finder's business.
+// Moving into the Trash is FileManager.trashItem, the API Finder uses, and
+// trash stamps each item it moves with where it came from (PutBack.swift,
+// Stamp): an xattr on the item itself, which no other process can erase.
+// Where an item came from is read from that stamp and from macOS's own Put
+// Back record, the one Finder's Put Back reads, which also knows what Finder
+// and other tools trashed but which macOS loses for some items
+// (proofs/put-back). Items trashed on other volumes land in that volume's
+// .Trashes and stay Finder's business.
 import Foundation
-
-public let originXattr = "com.adriangalilea.trash.origin"
 
 /// One item in the Trash, as Finder would show it.
 public struct Item: Codable, Sendable {
     public let name: String
     public let added: Date?
-    /// Where it was trashed from, when trash recorded it.
-    public let origin: String?
+    /// Where macOS's Put Back record says it came from.
+    public let putBack: String?
+    /// Where trash's own stamp says it came from (items trash moved).
+    public let stamp: String?
+
+    /// Where it came from, out of what is recorded.
+    public var origin: Origin {
+        switch (putBack, stamp) {
+        case (let native?, let old?):
+            samePlace(native, old) ? .known(native) : .disputed(putBack: native, stamp: old)
+        case (let native?, nil): .known(native)
+        case (nil, let old?): .known(old)
+        case (nil, nil): .unknown
+        }
+    }
+
+    enum CodingKeys: String, CodingKey { case name, added, origin, putBack, stamp }
+
+    public init(name: String, added: Date?, putBack: String?, stamp: String?) {
+        self.name = name
+        self.added = added
+        self.putBack = putBack
+        self.stamp = stamp
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        name = try fields.decode(String.self, forKey: .name)
+        added = try fields.decodeIfPresent(Date.self, forKey: .added)
+        putBack = try fields.decodeIfPresent(String.self, forKey: .putBack)
+        stamp = try fields.decodeIfPresent(String.self, forKey: .stamp)
+    }
+
+    /// `origin` is the path restore puts it back to, null when unknown or
+    /// disputed; `putBack` and `stamp` are what each record says.
+    public func encode(to encoder: any Encoder) throws {
+        var fields = encoder.container(keyedBy: CodingKeys.self)
+        try fields.encode(name, forKey: .name)
+        try fields.encode(added, forKey: .added)
+        if case .known(let path) = origin {
+            try fields.encode(path, forKey: .origin)
+        } else {
+            try fields.encodeNil(forKey: .origin)
+        }
+        try fields.encode(putBack, forKey: .putBack)
+        try fields.encode(stamp, forKey: .stamp)
+    }
+}
+
+public enum Origin: Sendable, Equatable {
+    /// Where restore puts it back.
+    case known(String)
+    /// The two records name different places: nothing is guessed.
+    case disputed(putBack: String, stamp: String)
+    /// Neither record exists: trashed by a tool macOS did not record, or by
+    /// Finder moments ago (it writes the record a minute or more later).
+    case unknown
+}
+
+/// Two paths are one place when their folders resolve to the same real
+/// folder (`/tmp/x` and `/private/tmp/x`); a folder that is gone compares as
+/// written.
+func samePlace(_ a: String, _ b: String) -> Bool {
+    func real(_ path: String) -> String {
+        let url = URL(fileURLWithPath: path)
+        let folder = url.deletingLastPathComponent().path
+        guard let resolved = realpath(folder, nil) else { return path }
+        defer { free(resolved) }
+        return String(cString: resolved) + "/" + url.lastPathComponent
+    }
+    return a == b || real(a) == real(b)
 }
 
 /// An AppleDouble `._` file Foundation and Finder hide: on disk, never shown.
@@ -51,12 +122,17 @@ public enum TrashError: Error, Codable, Sendable {
     case unreadable(errno: Int32)
     case noSuchFile(String)
     case notTrashed(path: String, why: String)
-    /// Trashed, but its origin could not be written: restore can't find home.
+    /// Trashed, but its stamp could not be written (errno): only macOS's
+    /// record, if any, says where it came from.
     case originNotRecorded(path: String, nameInTrash: String, errno: Int32)
+    /// The Trash's .DS_Store, where macOS keeps every Put Back record, could
+    /// not be read as one.
+    case putBackUnreadable(why: String)
     case notInTrash(name: String, similar: [String])
     case ambiguous(name: String, matches: [Item])
     case notADirectory(String)
     case noOrigin(name: String)
+    case originsDisagree(name: String, putBack: String, stamp: String)
     case originFolderGone(String)
     case wouldOverwrite(String)
     case notRestored(name: String, why: String)
@@ -87,10 +163,7 @@ public struct Trash: Sendable {
         guard let inTrash = landed as URL? else {
             throw .notTrashed(path: path, why: "macOS did not say where it went")
         }
-        let written = origin.withCString {
-            setxattr(inTrash.path, originXattr, $0, strlen($0), 0, XATTR_NOFOLLOW)
-        }
-        guard written == 0 else {
+        if let errno = Stamp.write(origin, on: inTrash.path) {
             throw .originNotRecorded(
                 path: origin, nameInTrash: inTrash.lastPathComponent, errno: errno)
         }
@@ -127,8 +200,12 @@ public struct Trash: Sendable {
             guard isDirectory(folder.path) else { throw .notADirectory(directory) }
             target = folder.appending(path: item.name)
         } else {
-            guard let origin = item.origin else { throw .noOrigin(name: name) }
-            target = URL(fileURLWithPath: origin)
+            switch item.origin {
+            case .known(let origin): target = URL(fileURLWithPath: origin)
+            case .disputed(let putBack, let stamp):
+                throw .originsDisagree(name: name, putBack: putBack, stamp: stamp)
+            case .unknown: throw .noOrigin(name: name)
+            }
             let parent = target.deletingLastPathComponent().path
             guard isDirectory(parent) else { throw .originFolderGone(parent) }
         }
@@ -139,7 +216,7 @@ public struct Trash: Sendable {
         } catch {
             throw .notRestored(name: name, why: error.localizedDescription)
         }
-        _ = removexattr(target.path, originXattr, XATTR_NOFOLLOW)
+        Stamp.forget(at: target.path)
         return target.path
     }
 
@@ -182,15 +259,17 @@ public struct Trash: Sendable {
             let posix = (error as NSError).userInfo[NSUnderlyingErrorKey] as? NSError
             throw .unreadable(errno: Int32(posix?.code ?? Int(EPERM)))
         }
+        let shown = urls.filter { $0.lastPathComponent != ".DS_Store" }
+        let putBack = try PutBack.origins(in: folder, of: Set(shown.map(\.lastPathComponent)))
         return
-            urls
-            .filter { $0.lastPathComponent != ".DS_Store" }
+            shown
             .map {
                 Item(
                     name: $0.lastPathComponent,
                     added: (try? $0.resourceValues(forKeys: [.addedToDirectoryDateKey]))?
                         .addedToDirectoryDate,
-                    origin: origin(of: $0.path))
+                    putBack: putBack[$0.lastPathComponent],
+                    stamp: Stamp.origin(of: $0.path))
             }
             .sorted { ($0.added ?? .distantPast) > ($1.added ?? .distantPast) }
     }
@@ -208,15 +287,6 @@ public struct Trash: Sendable {
             found.append(Hidden(name: name, isDirectory: Int32(entry.pointee.d_type) == DT_DIR))
         }
         return found
-    }
-
-    private func origin(of path: String) -> String? {
-        let size = getxattr(path, originXattr, nil, 0, 0, XATTR_NOFOLLOW)
-        guard size > 0 else { return nil }
-        var bytes = [UInt8](repeating: 0, count: size)
-        let read = getxattr(path, originXattr, &bytes, size, 0, XATTR_NOFOLLOW)
-        guard read > 0 else { return nil }
-        return String(bytes: bytes[..<read], encoding: .utf8)
     }
 
     private func isDirectory(_ path: String) -> Bool {

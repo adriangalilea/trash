@@ -28,7 +28,7 @@ run = ["mise run format", "swift build"]
 
 [tasks.format]
 description = "swift-format in place"
-run = "xcrun swift-format --recursive Sources/ Package.swift --in-place"
+run = "xcrun swift-format --recursive Sources/ Examples/ Package.swift --in-place"
 
 # One drawing, every icon file: trash.icon (Icon Composer's package, its
 # layers SVG) is the icon; swift-utils' `mark` compiles the bundle's glass

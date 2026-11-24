@@ -60,22 +60,32 @@ func explain(_ error: TrashError, _ runner: Runner) -> String {
     case .notTrashed(let path, let why):
         return "\(path): \(why)"
     case .originNotRecorded(let path, let name, let code):
-        return "trashed \(tilde(path)) as '\(name)', but its origin could not be recorded"
-            + " (\(String(cString: strerror(code)))): restore it with a destination, trash --restore '\(name)' <dir>"
+        return "trashed \(tilde(path)) as '\(name)', but its origin could not be stamped"
+            + " (\(String(cString: strerror(code)))): if macOS recorded it, Finder's Put Back works;"
+            + " else restore it with a destination, trash --restore '\(name)' <dir>"
+    case .putBackUnreadable(let why):
+        return
+            "cannot read the Trash's Put Back records (\(tilde(Trash().folder.path))/.DS_Store): \(why)"
+            + "\nif Finder was writing it, run this again"
     case .notInTrash(let name, let similar):
         return "not in Trash: \(name)"
             + (similar.isEmpty ? "" : "\ndid you mean: " + similar.joined(separator: ", "))
     case .ambiguous(let name, let matches):
         return "\(matches.count) items named '\(name)' in Trash:\n"
             + matches.map {
-                "  \($0.added.map(stamp.string) ?? "?")  \($0.origin.map(tilde) ?? "(origin unknown)")"
+                "  \($0.added.map(stamp.string) ?? "?")  \(describe($0.origin))"
             }.joined(separator: "\n")
             + "\nrestore via Finder, or empty the duplicates first"
     case .notADirectory(let path):
         return "destination is not a directory: \(path)"
     case .noOrigin(let name):
+        return "macOS has no Put Back record for '\(name)'"
+            + " (if Finder trashed it moments ago, it writes one within a couple of minutes)"
+            + "\npass a destination: trash --restore '\(name)' <dir>"
+    case .originsDisagree(let name, let putBack, let stamp):
         return
-            "no origin recorded for '\(name)' (trashed outside this tool)\npass a destination: trash --restore '\(name)' <dir>"
+            "'\(name)' has two origins: macOS's Put Back says \(tilde(putBack)), trash's stamp says \(tilde(stamp))"
+            + "\npass the destination you want: trash --restore '\(name)' <dir>"
     case .originFolderGone(let folder):
         return
             "original directory no longer exists: \(tilde(folder))\npass a destination: trash --restore <name> <dir>"
@@ -109,6 +119,16 @@ func put(_ paths: [String], stopOnError: Bool) {
     if failed { exit(1) }
 }
 
+/// An origin in words, for list and for a refusal that lists items.
+func describe(_ origin: Origin) -> String {
+    switch origin {
+    case .known(let path): tilde(path)
+    case .disputed(let putBack, let stamp):
+        "(origins disagree: Put Back says \(tilde(putBack)), trash's stamp says \(tilde(stamp)))"
+    case .unknown: "(origin unknown: not recorded, or not yet if Finder trashed it moments ago)"
+    }
+}
+
 func listing() -> (Listing, Runner) {
     let (reply, runner) = perform(.list)
     switch reply {
@@ -135,8 +155,9 @@ func list(json: Bool) {
     for item in contents.items {
         let name = item.name.count > width ? String(item.name.prefix(width - 1)) + "…" : item.name
         let added = item.added.map(stamp.string) ?? String(repeating: " ", count: 16)
-        let origin = item.origin.map(tilde) ?? "(origin unknown: trashed outside this tool)"
-        print("\(name.padding(toLength: width, withPad: " ", startingAt: 0))  \(added)  \(origin)")
+        print(
+            "\(name.padding(toLength: width, withPad: " ", startingAt: 0))  \(added)  \(describe(item.origin))"
+        )
     }
     guard !contents.hidden.isEmpty else { return }
     let what = "\(plural(contents.hidden.count, "hidden \"._\" metadata file")) invisible to Finder"
@@ -226,17 +247,18 @@ enum Verb: TerminalProgram.Commands {
                 "list", args: [],
                 says: "what is in the Trash: name, when it was trashed, where from",
                 more: """
-                    Items trashed by Finder or another tool have no recorded origin. Finder cannot see AppleDouble "._" files in the Trash, so a Trash it shows as empty can still hold thousands: list counts them, empty removes them.
+                    Where each came from is trash's own stamp for what trash moved, and macOS's Put Back record, the one Finder reads, for what Finder or another tool moved. macOS loses its record for some items (every one after the first of a tool that moved several at once), and Finder writes its records a minute or two after the move. Finder cannot see AppleDouble "._" files in the Trash, so a Trash it shows as empty can still hold thousands: --list counts them, --empty removes them.
                     """,
                 examples: ["trash --list", "trash --ls --json"],
-                json: "the items (name, added, origin) and the hidden \"._\" files",
+                json:
+                    "the items (name, added, origin: where restore puts it, putBack and stamp: what each record says) and the hidden \"._\" files",
                 aliases: ["ls"], risk: .read)
         case .restore:
             .init(
                 "restore", args: [Verb.name, Verb.into],
                 says: "put an item back where it came from, or into dir",
                 more: """
-                    An item with no recorded origin (trashed by Finder or another tool) needs dir, or Finder's own Put Back. Nothing is ever overwritten.
+                    It goes back where its records say: trash's own stamp for what trash moved, macOS's Put Back record (the one Finder's Put Back uses) for what Finder or another tool moved. An item with neither, or whose two records disagree, needs dir. Nothing is ever overwritten.
                     """,
                 examples: ["trash --restore notes.txt", "trash --restore photo.jpg ~/Desktop"],
                 risk: .covered)

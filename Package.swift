@@ -22,5 +22,8 @@ let package = Package(
                 "TrashKit", .product(name: "PermissionGrants", package: "swift-utils"),
                 .product(name: "TerminalPrograms", package: "swift-utils"),
             ]),
+        // The proof of the Put Back reader against the live Trash, read-only:
+        // `swift run putback NAME=/expected/origin ...`.
+        .executableTarget(name: "putback", dependencies: ["TrashKit"], path: "Examples/putback"),
     ]
 )
