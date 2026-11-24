@@ -59,6 +59,10 @@ func explain(_ error: TrashError, _ runner: Runner) -> String {
         return "no such file: \(path)"
     case .notTrashed(let path, let why):
         return "\(path): \(why)"
+    case .originNotRecorded(let path, let name, let code):
+        return "trashed \(tilde(path)) as '\(name)', but its origin could not be stamped"
+            + " (\(String(cString: strerror(code)))): if macOS recorded it, Finder's Put Back works;"
+            + " else restore it with a destination, trash restore '\(name)' <dir>"
     case .putBackUnreadable(let why):
         return
             "cannot read the Trash's Put Back records (\(tilde(Trash().folder.path))/.DS_Store): \(why)"
@@ -78,9 +82,9 @@ func explain(_ error: TrashError, _ runner: Runner) -> String {
         return "macOS has no Put Back record for '\(name)'"
             + " (if Finder trashed it moments ago, it writes one within a couple of minutes)"
             + "\npass a destination: trash restore '\(name)' <dir>"
-    case .originsDisagree(let name, let putBack, let trash1):
+    case .originsDisagree(let name, let putBack, let stamp):
         return
-            "'\(name)' has two origins: macOS's Put Back says \(tilde(putBack)), trash 1.x said \(tilde(trash1))"
+            "'\(name)' has two origins: macOS's Put Back says \(tilde(putBack)), trash's stamp says \(tilde(stamp))"
             + "\npass the destination you want: trash restore '\(name)' <dir>"
     case .originFolderGone(let folder):
         return
@@ -119,8 +123,8 @@ func put(_ paths: [String], stopOnError: Bool) {
 func describe(_ origin: Origin) -> String {
     switch origin {
     case .known(let path): tilde(path)
-    case .disputed(let putBack, let trash1):
-        "(origins disagree: Put Back says \(tilde(putBack)), trash 1.x said \(tilde(trash1)))"
+    case .disputed(let putBack, let stamp):
+        "(origins disagree: Put Back says \(tilde(putBack)), trash's stamp says \(tilde(stamp)))"
     case .unknown: "(origin unknown: not recorded, or not yet if Finder trashed it moments ago)"
     }
 }
@@ -246,14 +250,14 @@ enum Verb: TerminalProgram.Commands {
                     """,
                 examples: ["trash list", "trash ls --json"],
                 json:
-                    "the items (name, added, origin: where restore puts it, putBack and trash1: what each record says) and the hidden \"._\" files",
+                    "the items (name, added, origin: where restore puts it, putBack and stamp: what each record says) and the hidden \"._\" files",
                 aliases: ["ls"], risk: .read)
         case .restore:
             .init(
                 "restore", args: [Verb.name, Verb.into],
                 says: "put an item back where it came from, or into dir",
                 more: """
-                    It goes back where macOS's Put Back record says, the place Finder's Put Back would use. An item with no record, or whose record and trash 1.x's disagree, needs dir. Nothing is ever overwritten.
+                    It goes back where its records say: trash's own stamp for what trash moved, macOS's Put Back record (the one Finder's Put Back uses) for what Finder or another tool moved. An item with neither, or whose two records disagree, needs dir. Nothing is ever overwritten.
                     """,
                 examples: ["trash restore notes.txt", "trash restore photo.jpg ~/Desktop"],
                 risk: .covered)

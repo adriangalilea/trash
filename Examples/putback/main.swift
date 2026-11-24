@@ -2,7 +2,7 @@
 // state. Read-only: it lists the Trash (Full Disk Access needed) and never
 // changes it.
 //
-//   swift run putback                         every item: Put Back, trash 1.x, origin
+//   swift run putback                         every item: Put Back, stamp, origin
 //   swift run putback NAME=/abs/path NAME=-   only those, each checked: a path is
 //                                             the expected Put Back origin, - none
 //
@@ -28,7 +28,7 @@ let items = Dictionary(listing.items.map { ($0.name, $0) }, uniquingKeysWith: { 
 func show(_ origin: Origin) -> String {
     switch origin {
     case .known(let path): "known \(path)"
-    case .disputed(let putBack, let trash1): "DISPUTED put-back \(putBack) vs trash1 \(trash1)"
+    case .disputed(let putBack, let stamp): "DISPUTED put-back \(putBack) vs stamp \(stamp)"
     case .unknown: "unknown"
     }
 }
@@ -36,7 +36,7 @@ func show(_ origin: Origin) -> String {
 if truths.isEmpty {
     for item in listing.items {
         print(
-            "\(item.name)\n  put back: \(item.putBack ?? "-")\n  trash 1.x: \(item.trash1 ?? "-")\n  origin: \(show(item.origin))"
+            "\(item.name)\n  put back: \(item.putBack ?? "-")\n  stamp: \(item.stamp ?? "-")\n  origin: \(show(item.origin))"
         )
     }
     exit(0)
@@ -53,7 +53,7 @@ for truth in truths {
     if !ok { wrong += 1 }
     print(
         "\(ok ? "ok      " : "WRONG   ") \(truth.name)\n  expected: \(truth.expected ?? "-")\n  read:     \(item.putBack ?? "-")"
-            + (item.trash1.map { "\n  trash 1.x: \($0)" } ?? "")
+            + (item.stamp.map { "\n  stamp: \($0)" } ?? "")
             + "\n  origin:   \(show(item.origin))")
 }
 print("\(truths.count - wrong)/\(truths.count) as stated")

@@ -21,9 +21,9 @@ No list, no restore, no empty. `trash-cli` has the commands but refuses the
 native `~/.Trash`, so your files vanish from Finder and Put Back breaks.
 
 This tool is both: it moves files with `FileManager.trashItem`, the same API
-Finder uses, and reads where each item came from out of macOS's own Put Back
-record, the one Finder's Put Back uses. `restore` and Finder always agree on
-where a file goes back to, whichever of them moved it there. Every trash
+Finder uses, stamps each item it moves with where it came from, and also
+reads macOS's own Put Back record, the one Finder's Put Back uses. So it
+restores what it trashed and what Finder or any other tool trashed. Every trash
 prints a `trashed: <origin>` breadcrumb to stderr, so your terminal doubles
 as an undo log while stdout stays byte-identical to `/usr/bin/trash` (empty):
 scripts and pipes never see a difference. When macOS renames on collision the
@@ -41,22 +41,25 @@ had there (so an item macOS renamed on a collision still goes back under its
 own name). `trash` reads that file by its structure and never writes it.
 Three things about it are worth knowing:
 
-- macOS writes the record only for the FIRST item a process trashes. Apple's
-  `/usr/bin/trash a b c` leaves `b` and `c` without a Put Back. So `trash`
-  moves each path after the first in a process of its own (about 70 ms a
-  path), which gets nearly every item its record; macOS still drops one now
-  and then, more often while a Finder window shows the Trash.
+- macOS writes the record only for the first item a process trashes, and
+  loses some even then. Apple's `/usr/bin/trash a b c` leaves `b` and `c`
+  without a Put Back, and so does `trash a b c`: Finder's Put Back works for
+  its first item only. A process per path would record most of the rest at
+  about 70 ms a path, and still lose 1 to 5%; `trash` stays fast instead
+  ([proofs/put-back](proofs/put-back/README.md), its DECISIONS.md).
 - Finder writes the file lazily, a minute or two after a move. An item
   Finder trashed moments ago can show "origin unknown" until then.
 - Records are never removed when items leave the Trash. One whose name a
   later item reuses can name the earlier item's folder, when the later one
   got no record of its own.
 
-Items `trash` 1.x moved carry its own xattr (`com.adriangalilea.trash.origin`)
-with their original path. Where there is no Put Back record it is read
-instead, and where both exist and name different places, `list` shows both
-and `restore` asks for a destination rather than pick one. Nothing writes
-that xattr any more.
+So `trash` keeps its own record too: every item it moves is stamped with its
+original path, an xattr on the item itself
+(`com.adriangalilea.trash.origin`) that no other process can erase. An item
+with either record goes back where it says. Where both exist and name
+different places (Finder's Put Back carries the stamp out with the item, so
+an item later trashed again by Finder can hold an old one), `list` shows
+both and `restore` asks for a destination rather than pick one.
 
 ## It empties what Finder can't
 
@@ -130,7 +133,7 @@ build's grant is lost at the next rebuild): with a certificate of your own,
   from a command (`trash lst`) is refused as a likely typo: `trash ./lst`.
 - `/usr/bin/trash`'s flags work the same: `-v`/`--verbose` (what was trashed
   is always said) and `-s`/`--stopOnError`.
-- `restore` puts an item back where its Put Back record says. It never
+- `restore` puts an item back where its records say. It never
   overwrites and creates no folder: if the original directory is gone, the
   item has no record, or the records disagree, it says so and takes a
   destination directory instead. It leaves `.DS_Store` as it is.
@@ -148,7 +151,6 @@ grant (`PermissionGrants`) and the command's description, help and skill
 (`TerminalPrograms`). `TrashKit` is everything
 done to the Trash (no printing, no exits), the `.DS_Store` reader included
 (`Sources/TrashKit/DSStore.swift`); the `trash` target is the command's
-words, the run-as-app hop and the process per path
-(`Sources/trash/AsApp.swift`). `swift run putback` shows what is read for
+words and the run-as-app hop (`Sources/trash/AsApp.swift`). `swift run putback` shows what is read for
 each item in your Trash, and `swift run putback NAME=/expected/path NAME=-`
 checks it against what you know.

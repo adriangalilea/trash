@@ -100,11 +100,21 @@ enum PutBack {
     }()
 }
 
-/// trash 1.x's own origin record, an xattr holding the absolute path. It
-/// exists for items trash 1.x moved, and goes when those are gone: nothing
-/// writes it any more.
-enum Trash1 {
+/// trash's own record of where an item came from: an xattr on the item
+/// itself, holding the absolute path, written by the process that moved it.
+/// Nothing else can erase it, unlike macOS's Put Back record, which macOS
+/// loses for some items (proofs/put-back/DECISIONS.md). Finder does not read
+/// it, and its Put Back carries it out with the item.
+enum Stamp {
     static let xattr = "com.adriangalilea.trash.origin"
+
+    /// Stamps the item at `path` with `origin`; the errno when it could not.
+    static func write(_ origin: String, on path: String) -> Int32? {
+        let written = origin.withCString {
+            setxattr(path, xattr, $0, strlen($0), 0, XATTR_NOFOLLOW)
+        }
+        return written == 0 ? nil : errno
+    }
 
     static func origin(of path: String) -> String? {
         let size = getxattr(path, xattr, nil, 0, 0, XATTR_NOFOLLOW)

@@ -4,10 +4,13 @@
 // same operations run with their own Full Disk Access) can never disagree.
 //
 // Moving into the Trash is FileManager.trashItem, the API Finder uses, and
-// where an item came from is macOS's own Put Back record (PutBack.swift), the
-// one Finder's Put Back reads: restore and Finder can never disagree. Items
-// trashed on other volumes land in that volume's .Trashes and stay Finder's
-// business.
+// trash stamps each item it moves with where it came from (PutBack.swift,
+// Stamp): an xattr on the item itself, which no other process can erase.
+// Where an item came from is read from that stamp and from macOS's own Put
+// Back record, the one Finder's Put Back reads, which also knows what Finder
+// and other tools trashed but which macOS loses for some items
+// (proofs/put-back). Items trashed on other volumes land in that volume's
+// .Trashes and stay Finder's business.
 import Foundation
 
 /// One item in the Trash, as Finder would show it.
@@ -16,27 +19,27 @@ public struct Item: Codable, Sendable {
     public let added: Date?
     /// Where macOS's Put Back record says it came from.
     public let putBack: String?
-    /// Where trash 1.x's xattr says it came from (items trash 1.x moved).
-    public let trash1: String?
+    /// Where trash's own stamp says it came from (items trash moved).
+    public let stamp: String?
 
     /// Where it came from, out of what is recorded.
     public var origin: Origin {
-        switch (putBack, trash1) {
+        switch (putBack, stamp) {
         case (let native?, let old?):
-            samePlace(native, old) ? .known(native) : .disputed(putBack: native, trash1: old)
+            samePlace(native, old) ? .known(native) : .disputed(putBack: native, stamp: old)
         case (let native?, nil): .known(native)
         case (nil, let old?): .known(old)
         case (nil, nil): .unknown
         }
     }
 
-    enum CodingKeys: String, CodingKey { case name, added, origin, putBack, trash1 }
+    enum CodingKeys: String, CodingKey { case name, added, origin, putBack, stamp }
 
-    public init(name: String, added: Date?, putBack: String?, trash1: String?) {
+    public init(name: String, added: Date?, putBack: String?, stamp: String?) {
         self.name = name
         self.added = added
         self.putBack = putBack
-        self.trash1 = trash1
+        self.stamp = stamp
     }
 
     public init(from decoder: any Decoder) throws {
@@ -44,11 +47,11 @@ public struct Item: Codable, Sendable {
         name = try fields.decode(String.self, forKey: .name)
         added = try fields.decodeIfPresent(Date.self, forKey: .added)
         putBack = try fields.decodeIfPresent(String.self, forKey: .putBack)
-        trash1 = try fields.decodeIfPresent(String.self, forKey: .trash1)
+        stamp = try fields.decodeIfPresent(String.self, forKey: .stamp)
     }
 
     /// `origin` is the path restore puts it back to, null when unknown or
-    /// disputed; `putBack` and `trash1` are what each record says.
+    /// disputed; `putBack` and `stamp` are what each record says.
     public func encode(to encoder: any Encoder) throws {
         var fields = encoder.container(keyedBy: CodingKeys.self)
         try fields.encode(name, forKey: .name)
@@ -59,7 +62,7 @@ public struct Item: Codable, Sendable {
             try fields.encodeNil(forKey: .origin)
         }
         try fields.encode(putBack, forKey: .putBack)
-        try fields.encode(trash1, forKey: .trash1)
+        try fields.encode(stamp, forKey: .stamp)
     }
 }
 
@@ -67,7 +70,7 @@ public enum Origin: Sendable, Equatable {
     /// Where restore puts it back.
     case known(String)
     /// The two records name different places: nothing is guessed.
-    case disputed(putBack: String, trash1: String)
+    case disputed(putBack: String, stamp: String)
     /// Neither record exists: trashed by a tool macOS did not record, or by
     /// Finder moments ago (it writes the record a minute or more later).
     case unknown
@@ -119,6 +122,9 @@ public enum TrashError: Error, Codable, Sendable {
     case unreadable(errno: Int32)
     case noSuchFile(String)
     case notTrashed(path: String, why: String)
+    /// Trashed, but its stamp could not be written (errno): only macOS's
+    /// record, if any, says where it came from.
+    case originNotRecorded(path: String, nameInTrash: String, errno: Int32)
     /// The Trash's .DS_Store, where macOS keeps every Put Back record, could
     /// not be read as one.
     case putBackUnreadable(why: String)
@@ -126,7 +132,7 @@ public enum TrashError: Error, Codable, Sendable {
     case ambiguous(name: String, matches: [Item])
     case notADirectory(String)
     case noOrigin(name: String)
-    case originsDisagree(name: String, putBack: String, trash1: String)
+    case originsDisagree(name: String, putBack: String, stamp: String)
     case originFolderGone(String)
     case wouldOverwrite(String)
     case notRestored(name: String, why: String)
@@ -156,6 +162,10 @@ public struct Trash: Sendable {
         }
         guard let inTrash = landed as URL? else {
             throw .notTrashed(path: path, why: "macOS did not say where it went")
+        }
+        if let errno = Stamp.write(origin, on: inTrash.path) {
+            throw .originNotRecorded(
+                path: origin, nameInTrash: inTrash.lastPathComponent, errno: errno)
         }
         return Trashed(
             origin: origin,
@@ -192,8 +202,8 @@ public struct Trash: Sendable {
         } else {
             switch item.origin {
             case .known(let origin): target = URL(fileURLWithPath: origin)
-            case .disputed(let putBack, let trash1):
-                throw .originsDisagree(name: name, putBack: putBack, trash1: trash1)
+            case .disputed(let putBack, let stamp):
+                throw .originsDisagree(name: name, putBack: putBack, stamp: stamp)
             case .unknown: throw .noOrigin(name: name)
             }
             let parent = target.deletingLastPathComponent().path
@@ -206,7 +216,7 @@ public struct Trash: Sendable {
         } catch {
             throw .notRestored(name: name, why: error.localizedDescription)
         }
-        Trash1.forget(at: target.path)
+        Stamp.forget(at: target.path)
         return target.path
     }
 
@@ -259,7 +269,7 @@ public struct Trash: Sendable {
                     added: (try? $0.resourceValues(forKeys: [.addedToDirectoryDateKey]))?
                         .addedToDirectoryDate,
                     putBack: putBack[$0.lastPathComponent],
-                    trash1: Trash1.origin(of: $0.path))
+                    stamp: Stamp.origin(of: $0.path))
             }
             .sorted { ($0.added ?? .distantPast) > ($1.added ?? .distantPast) }
     }
