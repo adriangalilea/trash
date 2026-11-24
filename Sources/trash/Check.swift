@@ -1,4 +1,4 @@
-// `trash check`: whether trash works on this Mac now, for a caller with
+// `trash --check`: whether trash works on this Mac now, for a caller with
 // nobody at the screen. It reads and changes nothing.
 import Foundation
 import TrashKit
@@ -41,7 +41,7 @@ func check(json: Bool) {
         problems.append(
             "nothing here can read the Trash: list, restore and empty fail until trash.app has Full Disk Access"
                 + (absent == nil
-                    ? " (trash list asks for it)" : ", which only a person at this Mac can give"))
+                    ? " (trash --list asks for it)" : ", which only a person at this Mac can give"))
     }
     let health = Health(
         ok: !quarantined, app: app?.path, version: version, quarantined: quarantined,

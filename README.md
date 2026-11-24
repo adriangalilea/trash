@@ -3,16 +3,18 @@
 macOS Trash CLI with a real Put Back. One command, native `~/.Trash`.
 
 ```
-trash file.txt                 # move to Trash, origin recorded
-trash list                     # what's in the Trash, since when, from where
-trash restore file.txt         # back to where it came from
-trash restore file.txt ~/tmp   # ...or into a chosen directory
-trash empty                    # empty, with confirmation (-f skips)
-trash check                    # does trash work here right now, with nobody needed
+trash file.txt folder/           # move to Trash, origin recorded
+trash --list                     # what's in the Trash, since when, from where
+trash --restore file.txt         # back to where it came from
+trash --restore file.txt ~/tmp   # ...or into a chosen directory
+trash --empty                    # empty, with confirmation (-f skips)
+trash --check                    # does trash work here right now, with nobody needed
 ```
 
-`trash help` is the full description, `trash skill install` gives it to
-Claude Code and Codex as a skill, and `list` and `check` answer `--json`.
+Every word is a file, exactly as with Apple's `/usr/bin/trash`: `trash list`
+trashes a file named `list`. Everything else is a flag. `trash --help` is the
+full description, `trash --skill install` gives it to Claude Code and Codex
+as a skill, and `--list` and `--check` answer `--json`.
 
 ## Why
 
@@ -39,8 +41,8 @@ macOS hides AppleDouble `._` metadata files in the Trash from Finder and
 from every app built on Foundation's directory listing. A Trash can hold
 thousands of them - typically left behind after deleting folders that once
 lived on exFAT/FAT drives - while Finder shows it empty and greys out
-Empty Trash, keeping the bytes on disk indefinitely. `trash list` reports
-them, `trash empty` deletes them with everything else, and the
+Empty Trash, keeping the bytes on disk indefinitely. `trash --list` reports
+them, `trash --empty` deletes them with everything else, and the
 confirmation states both counts. Check yours: `ls -A ~/.Trash` next to an
 "empty" Trash can be a surprise.
 
@@ -62,17 +64,17 @@ whether anything would wait.
 
 ## Nothing waits on a person who is not there
 
-With nobody at the unlocked screen, `list`, `restore` and `empty` never open
+With nobody at the unlocked screen, `--list`, `--restore` and `--empty` never open
 trash.app's grant window: they fail at once saying what is missing. A
 relaunch as trash.app that macOS holds fails within 10 seconds, naming what
-to look at, and `empty` with nobody to answer its question does nothing.
+to look at, and `--empty` with nobody to answer its question does nothing.
 
 ## Reading the Trash needs Full Disk Access
 
-Moving things into the Trash works from anywhere. Reading it (`list`,
-`restore`, `empty`) doesn't: macOS lets only a process with Full Disk Access
+Moving things into the Trash works from anywhere. Reading it (`--list`,
+`--restore`, `--empty`) doesn't: macOS lets only a process with Full Disk Access
 read `~/.Trash`, grants it to the app a command runs in (your terminal), never
-to the command, and never asks. Without it, `trash list` says so and exits 1;
+to the command, and never asks. Without it, `trash --list` says so and exits 1;
 it never shows an unreadable Trash as empty.
 
 So `trash` reads the Trash itself first, and only when macOS refuses does it
@@ -99,19 +101,18 @@ build's grant is lost at the next rebuild): with a certificate of your own,
 
 ## Semantics worth knowing
 
-- Subcommand names always win: a file literally named `list` is trashed with
-  `trash ./list` or `trash -- list`. Deterministic, and the dangerous direction (a filename
-  silently hijacking a subcommand) cannot happen. A first word a letter away
-  from a command (`trash lst`) is refused as a likely typo: `trash ./lst`.
+- Every word is a file, whatever it is named: `trash list empty` trashes two
+  files. The other actions are flags, so a file name can never be read as
+  one. A file whose name starts with `-` goes after `--`: `trash -- -x`.
 - `/usr/bin/trash`'s flags work the same: `-v`/`--verbose` (what was trashed
   is always said) and `-s`/`--stopOnError`.
-- `restore` never overwrites, and screams if the original directory is gone
+- `--restore` never overwrites, and screams if the original directory is gone
   or the item was trashed by something else (no recorded origin): pass a
   destination directory in those cases, or use Finder's Put Back.
 - Duplicate names don't happen: macOS renames on collision inside the Trash
   (`dup.txt` then `dup.txt 14-27-01-327.txt`), and each item restores to its
   true origin regardless of the trash-side rename. If a duplicate somehow
-  appears anyway, `restore` refuses rather than guesses.
+  appears anyway, `--restore` refuses rather than guesses.
 - Home-volume Trash only. Items trashed on external volumes live in that
   volume's `.Trashes` and stay Finder's business.
 
