@@ -216,7 +216,7 @@ enum Verb: TerminalProgram.Commands {
                 "put", args: [Verb.paths], flags: [Verb.verbose, Verb.stopOnError],
                 says: "move files and folders to the Trash, recording where each came from",
                 more: """
-                    `trash <paths>` is this command: the same call as /usr/bin/trash, with nothing on stdout and exit 0 when every path moved. Each move is said on stderr (`trashed: <path>`, and the name it took in the Trash when one there had it), the undo's breadcrumb. A path that cannot be trashed is said and the others still go, unless --stop-on-error; any failure exits 1. A file named like a command goes by its path: `trash ./list`.
+                    `trash <paths>` is this command: the same call as /usr/bin/trash, with nothing on stdout and exit 0 when every path moved. Each move is said on stderr (`trashed: <path>`, and the name it took in the Trash when one there had it), the undo's breadcrumb. A path that cannot be trashed is said and the others still go, unless --stop-on-error; any failure exits 1. A file named like a command goes by its path or after `--`: `trash ./list`, `trash -- list`.
                     """,
                 examples: ["trash notes.txt build/", "trash -s a b c"],
                 risk: .covered)
@@ -307,8 +307,16 @@ if arguments.first == AsApp.grant || (arguments.isEmpty && getppid() == 1 && AsA
     GrantWindow.run()
 }
 
-// /usr/bin/trash spells its flag --stopOnError, a spelling no flag here has.
-let call = program.read(arguments.map { $0 == "--stopOnError" ? "--stop-on-error" : $0 })
+// /usr/bin/trash's call, read as it reads it: --stopOnError is a spelling no
+// flag here has, and a leading `--` ends the options, so every word after it
+// is a path (`trash -- list` trashes the file list), never a command.
+// WORKAROUND, ours: TerminalPrograms reads a command name after a leading
+// `--` even in a program with a default command, so `--` is routed to put
+// here. Delete the `["put"]` rewrite when swift-utils gives those words to
+// the default command (its TODO.md, "`--` and the default command").
+let call = program.read(
+    (arguments.first == "--" ? ["put"] + arguments : arguments)
+        .map { $0 == "--stopOnError" ? "--stop-on-error" : $0 })
 switch call.command {
 case .put: put(call[Verb.paths], stopOnError: call[Verb.stopOnError])
 case .list: list(json: call.json)

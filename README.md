@@ -100,7 +100,7 @@ build's grant is lost at the next rebuild): with a certificate of your own,
 ## Semantics worth knowing
 
 - Subcommand names always win: a file literally named `list` is trashed with
-  `trash ./list`. Deterministic, and the dangerous direction (a filename
+  `trash ./list` or `trash -- list`. Deterministic, and the dangerous direction (a filename
   silently hijacking a subcommand) cannot happen. A first word a letter away
   from a command (`trash lst`) is refused as a likely typo: `trash ./lst`.
 - `/usr/bin/trash`'s flags work the same: `-v`/`--verbose` (what was trashed
