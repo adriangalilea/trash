@@ -20,6 +20,7 @@ let package = Package(
             name: "trash",
             dependencies: [
                 "TrashKit", .product(name: "PermissionGrants", package: "swift-utils"),
+                .product(name: "TerminalPrograms", package: "swift-utils"),
             ]),
     ]
 )

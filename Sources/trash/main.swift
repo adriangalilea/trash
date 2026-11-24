@@ -8,6 +8,7 @@
 // to Apple's and only the extras are lost.
 import Foundation
 import PermissionGrants
+import TerminalPrograms
 import TrashKit
 
 func fail(_ message: String) -> Never {
@@ -87,10 +88,10 @@ func explain(_ error: TrashError, _ runner: Runner) -> String {
 
 // MARK: - commands
 
-func put(_ paths: [String]) {
-    guard !paths.isEmpty else { fail("no paths given (see `trash help`)") }
+func put(_ paths: [String], stopOnError: Bool) {
     var failed = false
     for path in paths {
+        if failed && stopOnError { exit(1) }
         do throws(TrashError) {
             let trashed = try Trash().put(path)
             // The undo breadcrumb on STDERR: stdout stays empty exactly like
@@ -117,8 +118,15 @@ func listing() -> (Listing, Runner) {
     }
 }
 
-func list() {
+func list(json: Bool) {
     let (contents, _) = listing()
+    if json {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        print(String(decoding: try! encoder.encode(contents), as: UTF8.self))
+        return
+    }
     if contents.isEmpty {
         print("Trash is empty")
         return
@@ -142,13 +150,8 @@ func list() {
     }
 }
 
-func restore(_ arguments: [String]) {
-    guard let name = arguments.first else {
-        print("usage: trash restore <name> [destination-dir]\n")
-        list()
-        exit(1)
-    }
-    let (reply, runner) = perform(.restore(name: name, into: arguments.dropFirst().first))
+func restore(_ name: String, into: String?) {
+    let (reply, runner) = perform(.restore(name: name, into: into))
     switch reply {
     case .restored(let path): print("restored: \(tilde(path))")
     case .failed(let error): fail(explain(error, runner))
@@ -156,13 +159,13 @@ func restore(_ arguments: [String]) {
     }
 }
 
-func empty(_ arguments: [String]) {
+func empty(force: Bool) {
     let (contents, _) = listing()
     guard !contents.isEmpty else {
         print("Trash is empty")
         return
     }
-    if !(arguments.contains("-f") || arguments.contains("--force")) {
+    if !force {
         var what: [String] = []
         if !contents.items.isEmpty { what.append(plural(contents.items.count, "item")) }
         if !contents.hidden.isEmpty {
@@ -191,26 +194,103 @@ func empty(_ arguments: [String]) {
     }
 }
 
-func help() {
-    print(
-        """
-        trash: macOS Trash CLI (native ~/.Trash, real Put Back)
+// MARK: - the program
 
-        usage:
-          trash <paths...>               move to Trash (records origin, prints breadcrumb)
-          trash list (or: ls)            Trash contents: name, when, origin
-          trash restore <name> [dir]     restore to origin (or into dir)
-          trash empty [-f]               empty the Trash, invisible leftovers included (asks unless -f)
+enum Verb: TerminalProgram.Commands {
+    case put, list, restore, empty, check
 
-        A file literally named list/restore/empty/help: trash ./list  (or trash -- list)
-        Items trashed by Finder or other tools have no recorded origin; restore
-        them with an explicit destination, or with Finder's own Put Back.
-        Finder cannot see AppleDouble "._" files in the Trash (an emptied-looking
-        Trash can still hold thousands); list reports them, empty removes them.
-        Reading the Trash needs Full Disk Access: where the terminal lacks it,
-        trash.app (the cask) reads it with its own.
-        """)
+    static let paths = TerminalProgram.Arg.rest("paths")
+    static let verbose = TerminalProgram.Flag.on(
+        "verbose", short: "v",
+        says: "accepted as /usr/bin/trash takes it: what was trashed is always said")
+    static let stopOnError = TerminalProgram.Flag.on(
+        "stop-on-error", short: "s", says: "stop at the first path that cannot be trashed")
+    static let name = TerminalProgram.Arg.needed("name")
+    static let into = TerminalProgram.Arg.optional("dir")
+    static let force = TerminalProgram.Flag.on("force", short: "f", says: "do not ask first")
+
+    var command: TerminalProgram.Command {
+        switch self {
+        case .put:
+            .init(
+                "put", args: [Verb.paths], flags: [Verb.verbose, Verb.stopOnError],
+                says: "move files and folders to the Trash, recording where each came from",
+                more: """
+                    `trash <paths>` is this command: the same call as /usr/bin/trash, with nothing on stdout and exit 0 when every path moved. Each move is said on stderr (`trashed: <path>`, and the name it took in the Trash when one there had it), the undo's breadcrumb. A path that cannot be trashed is said and the others still go, unless --stop-on-error; any failure exits 1. A file named like a command goes by its path: `trash ./list`.
+                    """,
+                examples: ["trash notes.txt build/", "trash -s a b c"],
+                risk: .covered)
+        case .list:
+            .init(
+                "list", args: [],
+                says: "what is in the Trash: name, when it was trashed, where from",
+                more: """
+                    Items trashed by Finder or another tool have no recorded origin. Finder cannot see AppleDouble "._" files in the Trash, so a Trash it shows as empty can still hold thousands: list counts them, empty removes them.
+                    """,
+                examples: ["trash list", "trash ls --json"],
+                json: "the items (name, added, origin) and the hidden \"._\" files",
+                aliases: ["ls"], risk: .read)
+        case .restore:
+            .init(
+                "restore", args: [Verb.name, Verb.into],
+                says: "put an item back where it came from, or into dir",
+                more: """
+                    An item with no recorded origin (trashed by Finder or another tool) needs dir, or Finder's own Put Back. Nothing is ever overwritten.
+                    """,
+                examples: ["trash restore notes.txt", "trash restore photo.jpg ~/Desktop"],
+                risk: .covered)
+        case .empty:
+            .init(
+                "empty", flags: [Verb.force],
+                says:
+                    "delete everything in the Trash for good, the files Finder cannot see included",
+                more:
+                    "It asks first, and with nobody to answer it does nothing; --force does not ask.",
+                examples: ["trash empty"],
+                risk: .init(
+                    .covered,
+                    when: [
+                        .flag(
+                            Verb.force, .machine,
+                            why: "it deletes the Trash for good with nobody asked",
+                            instead: "trash empty")
+                    ]))
+        case .check:
+            .init(
+                "check", says: "whether trash works on this Mac right now, with nobody needed",
+                more: """
+                    For a caller with nobody at the screen (a script, a daemon, ssh) to ask before relying on trash. It reads, never changes anything: whether trash.app is quarantined (a quarantined app's launch can wait on a Gatekeeper prompt only a person answers), whether this process or trash.app can read the Trash (list, restore and empty need it), and whether a person is at the unlocked screen. Exit 0: `trash <paths>` works and nothing waits on a person; 1: something would, each reason with its fix. A launch macOS holds never reaches trash's own code, so call it under a limit: `timeout 10 trash check`.
+                    """,
+                examples: ["timeout 10 trash check", "trash check --json"],
+                json: "ok, and each fact: quarantined, reading (here, trash.app or none), person",
+                risk: .read)
+        }
+    }
 }
+
+/// trash.app's version, from the bundle this binary is inside; nil for a bare
+/// build, which has no release.
+let version = AsApp.bundle.flatMap {
+    Bundle(url: $0)?.infoDictionary?["CFBundleShortVersionString"] as? String
+}
+
+let program = TerminalProgram.Program<Verb>(
+    name: "trash", says: "the macOS Trash from the command line, with a real Put Back",
+    about: [
+        "Reading the Trash needs Full Disk Access: where the terminal lacks it, trash.app reads it with its own."
+    ],
+    version: version, default: .init(.put, claims: { _ in true }), json: true,
+    skill: .init(
+        useWhen: [
+            "moving files or folders to the Trash instead of deleting them",
+            "what is in the Trash and where each item came from",
+            "putting a trashed item back where it was",
+        ],
+        never: [
+            "rm a file someone may want back: trash it",
+            "empty the Trash without the person's yes",
+        ]),
+    risks: .init())
 
 // MARK: - dispatch
 
@@ -226,26 +306,13 @@ if arguments.first == AsApp.serve { AsApp.answerAndExit(Array(arguments.dropFirs
 if arguments.first == AsApp.grant || (arguments.isEmpty && getppid() == 1 && AsApp.bundle != nil) {
     GrantWindow.run()
 }
-if arguments.isEmpty {
-    help()
-    exit(2)
-}
-switch arguments[0] {
-case "help", "--help", "-h": help()
-case "--version":
-    guard let app = AsApp.bundle,
-        let version = Bundle(url: app)?.infoDictionary?["CFBundleShortVersionString"] as? String
-    else { fail("no version: this build is not inside trash.app") }
-    if let expected = arguments.dropFirst().first, expected != version {
-        fail("version \(version), expected \(expected)")
-    }
-    print(version)
-case "list", "ls": list()
-case "restore": restore(Array(arguments.dropFirst()))
-case "empty": empty(Array(arguments.dropFirst()))
-// /usr/bin/trash compat: -v; breadcrumbs print regardless
-case "--", "-v": put(Array(arguments.dropFirst()))
-default:
-    if arguments[0].hasPrefix("-") { fail("unknown option: \(arguments[0]) (see `trash help`)") }
-    put(arguments)
+
+// /usr/bin/trash spells its flag --stopOnError, a spelling no flag here has.
+let call = program.read(arguments.map { $0 == "--stopOnError" ? "--stop-on-error" : $0 })
+switch call.command {
+case .put: put(call[Verb.paths], stopOnError: call[Verb.stopOnError])
+case .list: list(json: call.json)
+case .restore: restore(call[Verb.name], into: call[Verb.into])
+case .empty: empty(force: call[Verb.force])
+case .check: check(json: call.json)
 }

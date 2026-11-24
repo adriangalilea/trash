@@ -8,7 +8,11 @@ trash list                     # what's in the Trash, since when, from where
 trash restore file.txt         # back to where it came from
 trash restore file.txt ~/tmp   # ...or into a chosen directory
 trash empty                    # empty, with confirmation (-f skips)
+trash check                    # does trash work here right now, with nobody needed
 ```
+
+`trash help` is the full description, `trash skill install` gives it to
+Claude Code and Codex as a skill, and `list` and `check` answer `--json`.
 
 ## Why
 
@@ -49,6 +53,20 @@ brew install --cask adriangalilea/tap/trash
 That installs `trash.app` and links the `trash` command from inside it.
 Installed as the old Homebrew formula? `brew uninstall trash` first.
 
+Homebrew quarantines what a cask downloads, and macOS shows a quarantined
+app's first launch a Gatekeeper prompt. Launched with nobody at the screen
+(over ssh, from a script), that launch waits for the prompt's answer before
+any of trash's own code runs. Open `trash.app` once, or run `trash` once at
+the screen, before relying on it unattended; `timeout 10 trash check` says
+whether anything would wait.
+
+## Nothing waits on a person who is not there
+
+With nobody at the unlocked screen, `list`, `restore` and `empty` never open
+trash.app's grant window: they fail at once saying what is missing. A
+relaunch as trash.app that macOS holds fails within 10 seconds, naming what
+to look at, and `empty` with nobody to answer its question does nothing.
+
 ## Reading the Trash needs Full Disk Access
 
 Moving things into the Trash works from anywhere. Reading it (`list`,
@@ -82,8 +100,11 @@ build's grant is lost at the next rebuild): with a certificate of your own,
 ## Semantics worth knowing
 
 - Subcommand names always win: a file literally named `list` is trashed with
-  `trash ./list` or `trash -- list`. Deterministic, and the dangerous
-  direction (a filename silently hijacking a subcommand) cannot happen.
+  `trash ./list`. Deterministic, and the dangerous direction (a filename
+  silently hijacking a subcommand) cannot happen. A first word a letter away
+  from a command (`trash lst`) is refused as a likely typo: `trash ./lst`.
+- `/usr/bin/trash`'s flags work the same: `-v`/`--verbose` (what was trashed
+  is always said) and `-s`/`--stopOnError`.
 - `restore` never overwrites, and screams if the original directory is gone
   or the item was trashed by something else (no recorded origin): pass a
   destination directory in those cases, or use Finder's Put Back.
@@ -96,7 +117,8 @@ build's grant is lost at the next rebuild): with a certificate of your own,
 
 ## Requirements
 
-macOS 26+. Built with SwiftPM; one dependency, swift-utils' `PermissionGrants`
-for trash.app's grant. `TrashKit` is everything
+macOS 27+. Built with SwiftPM; one dependency, swift-utils, for trash.app's
+grant (`PermissionGrants`) and the command's description, help and skill
+(`TerminalPrograms`). `TrashKit` is everything
 done to the Trash (no printing, no exits); the `trash` target is the command's
 words and the run-as-app hop (`Sources/trash/AsApp.swift`).
